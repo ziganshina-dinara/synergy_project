@@ -10,7 +10,7 @@ import sys
 def createParser ():
     parser = argparse.ArgumentParser()
     parser.add_argument('-inf_score_up', '--path_to_file_with_inf_score_up', type = str)
-    parser.add_argument('-inf_score_down', '--path_to_file_with_inf_score_dowlsn', type = str)
+    parser.add_argument('-inf_score_down', '--path_to_file_with_inf_score_down', type = str)
     parser.add_argument('-signatures', '--path_to_file_with_signatures',
                         default = 'DATA/CMap/CD_signatures_binary_42809.gmt', type = argparse.FileType())
     parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA/CMap', type = str)
@@ -287,7 +287,7 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score_up, df_inf_s
     cosine_dist_matrix.columns = signature_id_list
 
     for i in range(len(signature_list)-1):
-        for j in range(i,len(signature_list)):
+        for j in range(i+1,len(signature_list)):
             start_time = time.time()
             pair = Signature_pair(signature_list[i], signature_list[j])
             cosine_dist = find_cosine_dist(pair, query_signature, df_inf_score_up, df_inf_score_down)
