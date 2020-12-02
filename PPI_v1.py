@@ -12,7 +12,7 @@ import time #to calculate the time
 
 import argparse #read arguments from the command line
 import sys
-from function_signature_from_DE import make_signature_from_DE
+from function_signature_from_DE_v1 import make_signature_from_DE
 
 def createParser ():
     parser = argparse.ArgumentParser()
