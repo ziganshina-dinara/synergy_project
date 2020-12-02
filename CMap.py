@@ -59,7 +59,7 @@ class Inf_score:
         if gene in self.genes:
             return df_with_df_inf_score.loc[gene, "inf_score"]
         else:
-            return 0
+            return 1
 
 class Signature:
     """
