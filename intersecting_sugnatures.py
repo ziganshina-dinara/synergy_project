@@ -13,31 +13,9 @@ for pert_id in list(data_Drugs_metadata.index):
     if data_CD_signature_metadata[data_CD_signature_metadata['pert_id'] == pert_id].shape[0] > 1:
         list_pert_id_with_sign.append(pert_id)
 print("составили список соединений длиной:", len(list_pert_id_with_sign))
-"""
-def find_sid_by_sid_id(out_from_file_with_signatures, sign_id):
-    start = time.time()
-    l = out_from_file_with_signatures.strip().split('\n')
-    list_sign_id_in_L1000FWD = []
-    for sub_l in l:
-        list_sign_id_in_L1000FWD.append(sub_l.split('\t')[0])
-    k = list_sign_id_in_L1000FWD.index(sign_id)
-    print("время работы поиска сигнатуры: ", time.time() - start)
-    return (l[k].split('\t')[2:], l[k+1].split('\t')[2:])
-"""
-""
-"""
-dict_signatures = {}
-for i in range(0, len(out_of_file_with_signatures.split('\n'))-1, 2):
-    start = time.time()
-    signature_up_list = out_of_file_with_signatures.split('\n')[i].split('\t')
-    signature_down_list = out_of_file_with_signatures.split('\n')[i+1].split('\t')
-    dict_signatures[signature_up_list[0]] = (signature_up_list[2:], signature_down_list[2:])
-    print("работа с", i, "-ой сигнатурой для словаря за", time.time() - start)
-    
-with open("DATA/CMap/signatures_dict.json", "w") as write_file:
-    json.dump(dict_signatures, write_file)
-"""
-with open("DATA/CMap/signatures_dict.json", "r") as read_file:
+
+
+with open("DATA/signatures_dict.json", "r") as read_file:
     dict_signatures = json.load(read_file)
 
 def find_sid_by_sid_id(dict_signatures, sign_id):
@@ -45,18 +23,6 @@ def find_sid_by_sid_id(dict_signatures, sign_id):
         return dict_signatures[sign_id]
     except KeyError:
         return None
-"""
-def find_sid_by_sid_id(out_from_file_with_signatures, sign_id):
-    start = time.time()
-    l = out_from_file_with_signatures.strip().split('\n')
-    list_sign_id_in_L1000FWD = []
-    for sub_l in l:
-        list_sign_id_in_L1000FWD.append(sub_l.split('\t')[0])
-    k = list_sign_id_in_L1000FWD.index(sign_id)
-    print("время работы поиска сигнатуры: ", time.time() - start)
-    return (l[k].split('\t')[2:], l[k+1].split('\t')[2:])
-"""
-#from intersecting_signatures_cython import find_sid_by_sid_id
 
 def TC(set_1, set_2, intersect): return len(intersect)/(len(set_1) + len(set_2) - len(intersect))
 
