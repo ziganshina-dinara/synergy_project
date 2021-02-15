@@ -2,6 +2,7 @@ import pandas as pd
 import time
 from multiprocessing import Pool, cpu_count
 import json
+from math import ceil
 print("начинаем читать функции и файлы")
 data_Drugs_metadata = pd.read_csv('DATA/Drugs_metadata.csv', index_col = 0)
 data_CD_signature_metadata = pd.read_csv('DATA/CD_signature_metadata.csv', index_col = 0)
@@ -9,7 +10,7 @@ with open("DATA/CD_signatures_binary_42809.gmt", "r") as file:
     out_of_file_with_signatures =file.read()
 print("прочитали файлы")
 
-with open("intersecting_signatures_task/signatures_dict.json", "r") as read_file:
+with open("time_dir/signatures_dict.json", "r") as read_file: #intersecting_signatures_task/
     dict_signatures = json.load(read_file)
 
 def find_sid_by_sid_id(dict_signatures, sign_id):
@@ -83,9 +84,12 @@ def intersecting_signatures_by_cell_id(list_needed_cell_id, data_CD_signature_me
     list_Tc_down = []
 
     for cell_id in list_needed_cell_id:
+
         list_sig_id = list(data_CD_signature_metadata[data_CD_signature_metadata['cell_id'] == cell_id].index)
+        #print(cell_id, len(list_sig_id))
         for i in range(len(list_sig_id) - 1):
             for j in range(i + 1, len(list_sig_id)):
+                start = time.time()
                 list_cell_id.append(cell_id)
                 list_sig_id_1.append(list_sig_id[i])
                 list_sig_id_2.append(list_sig_id[j])
@@ -107,39 +111,42 @@ def intersecting_signatures_by_cell_id(list_needed_cell_id, data_CD_signature_me
                 list_Down_intersecting_genes.append(len(down))
                 list_List_of_down_intersecting_genes.append(';'.join(list(down)))
                 list_Tc_down.append(TC(down_1, down_2, down))
-    list_list = [list_cell_id, list_sig_id_1, list_sig_id_2, list_pert_id_for_sig_1, list_pert_id_for_sig_2, list_pert_name_for_sig_1,
-                 list_pert_name_for_sig_2, list_canonical_smiles_for_sig_1, list_canonical_smiles_for_sig_2, list_Up_intersecting_genes,
-                 list_List_of_up_intersecting_genes, list_Tc_up, list_Down_intersecting_genes, list_List_of_down_intersecting_genes, list_Tc_down]
-    return list_list
+                #print(time.time()-start)
+        list_list = [list_cell_id, list_sig_id_1, list_sig_id_2, list_pert_id_for_sig_1, list_pert_id_for_sig_2, list_pert_name_for_sig_1,
+                         list_pert_name_for_sig_2, list_canonical_smiles_for_sig_1, list_canonical_smiles_for_sig_2, list_Up_intersecting_genes,
+                         list_List_of_up_intersecting_genes, list_Tc_up, list_Down_intersecting_genes, list_List_of_down_intersecting_genes, list_Tc_down]
+        #print('одноразовый выход функции:', len(list_list))
+        return list_list
 
 
-def split_list(list_for_split, n):
-    list_sublist = []
-    k = len(list_for_split)//n
-    i = 0
-    while(i + k < len(list_for_split) - 2):
-        list_sublist.append(list_for_split[i: i+ k])
-        i += k
-    list_sublist[-1] += list_for_split[i: len(list_for_split)]
-    return list_sublist
+def split_list(list_for_split, n_parts):
+    part_len = ceil(len(list_for_split) / n_parts)
+    return [list_for_split[part_len * k:part_len * (k + 1)] for k in range(n_parts)]
+
 
 def creating_df_intersecting_signatures_by_feature(function_intersecting_signatures, feature_list,  data_CD_signature_metadata,
 data_Drugs_metadata, dict_signatures, list_name, path_to_file_with_df):
     start = time.time()
-    pool = Pool()
+    print(split_list(feature_list, 10))
+    print([feature_list_splited for feature_list_splited in split_list(feature_list, 10) if len(feature_list_splited) != 0])
+    pool = Pool(processes=10)
     results = pool.starmap(function_intersecting_signatures, [(feature_list_splited, data_CD_signature_metadata,
                                                       data_Drugs_metadata, dict_signatures) for feature_list_splited in
-                                                     split_list(feature_list, cpu_count())])
+                                                     split_list(feature_list, 10) if len(feature_list_splited) !=0 ]) #cpu_count()
+
     dict_intersecting_signatures = {}
-    print("Приступили к распараллеливанию")
-
-
+    print("Приступили к результатам")
+    print(len(results))
+    print([len(results[i]) for i in range(len(results))])
     for name in list_name:
         dict_intersecting_signatures[name] = []
     for list_of_intersecting_signatures in results:
         for (name, list_name_of_intersecting_signatures) in zip(list_name, list_of_intersecting_signatures):
             dict_intersecting_signatures[name] += list_name_of_intersecting_signatures
     pool.close()
+    for name in list_name:
+        print(name, len(dict_intersecting_signatures[name]))
+    #print(dict_intersecting_signatures)
     df_intersecting_signatures = pd.DataFrame(dict_intersecting_signatures)
     print(time.time() - start)
     df_intersecting_signatures.to_csv(path_to_file_with_df)
@@ -165,13 +172,18 @@ df_intersecting_signatures_by_pert_id = creating_df_intersecting_signatures_by_f
 data_Drugs_metadata, dict_signatures, list_name_for_intersecting_signatures_by_pert_id , 'intersecting_signatures_task/intersecting_signatures_by_pert_id.csv')
 
 """
-
+start = time.time()
 #intersect signatures perturbed on the same cell type
 print('intersect signatures perturbed on the same cell type')
-print(list(data_CD_signature_metadata['cell_id'].unique())[0:3])
+list_needed_signatures = []
+for cell_id in list(data_CD_signature_metadata['cell_id'].unique()):
+    if len(list(data_CD_signature_metadata[data_CD_signature_metadata['cell_id'] == cell_id].index)) > 1:
+        list_needed_signatures.append(cell_id)
+
 list_name_for_intersecting_signatures_by_cell_id  = ['cell_id', 'sig_id_1', 'sig_id_2', 'pert_id for sig_1', 'pert_id for sig_2', 'pert_name for sig_1',
-                'pert_name for sig_2', 'cell_id for sig_1', 'cell_id for sig_2', 'canonical_smiles for pert of sig_1', 'canonical_smiles for pert of sig_2',
+                'pert_name for sig_2', 'canonical_smiles for pert of sig_1', 'canonical_smiles for pert of sig_2',
                 'Up intersecting genes', 'List of up intersecting genes', 'Tc up', 'Down intersecting genes', 'List of down intersecting genes', 'Tc down']
-df_intersecting_signatures_by_cell_id = creating_df_intersecting_signatures_by_feature(intersecting_signatures_by_cell_id, list(data_CD_signature_metadata['cell_id'].unique())[0:3],  data_CD_signature_metadata,
+df_intersecting_signatures_by_cell_id = creating_df_intersecting_signatures_by_feature(intersecting_signatures_by_cell_id, list_needed_signatures[-10:-1],  data_CD_signature_metadata,
 data_Drugs_metadata, dict_signatures, list_name_for_intersecting_signatures_by_cell_id , 'intersecting_signatures_task/intersecting_signatures_by_cell_id.csv')
 
+print('время работы:',time.time() - start)
