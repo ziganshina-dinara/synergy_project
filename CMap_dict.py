@@ -1,11 +1,19 @@
 import time #to calculate the time
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 from scipy.spatial.distance import cosine
 from scipy.stats import rankdata
 import argparse #read arguments from the command line
 import sys
 from multiprocessing import Pool
+from numba import njit
+from numba.typed import Dict
+from numba.core import types
+from create_weight_vector import test_f
+import dill
+from cython.parallel import prange
+
 
 #setting the expected parameters
 def createParser ():
@@ -17,53 +25,13 @@ def createParser ():
     parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA', type = str)
     parser.add_argument('-CD_signature_metadata', '--path_to_file_with_CD_signature_metadata',
                         default = 'DATA/CD_signature_metadata.csv', type = str)
-    parser.add_argument('-number_pair', '--number_pair_signatures', type = int)
+    parser.add_argument('-number_pair', '--number_pair_signatures', default = 50, type = int)
+    parser.add_argument('-p', '--number_processes', default = 10, type=int)
     parser.add_argument('-conv', '--conversion', type = str)
+
 
     return parser
 
-
-class Inf_score:
-    """
-    class Inf_score is used to determine the influence score of a gene.
-
-    Attributes
-    ----------
-    df_inf_score_up : DataFrame
-        DataFrame that lists the overexpression genes from the request signature
-        The dataframe contains influence score of gene calculated by topological metrics and logFC .
-    df_inf_score_down : DataFrame
-        DataFrame that lists the genes with reduced expression from the request signature
-        The dataframe contains influence score of gene calculated by topological metrics and logFC.
-    df_inf_score: DataFrame
-        DataFrame that lists the genes from the request signature
-        The dataframe contains influence score of gene calculated by topological metrics and logFC.
-    genes: list
-        list of genes from the request signature
-
-    Methods
-    -------
-    get_inf_score(gene)
-        Returns influence score of gene. If the gene is in the request signature, then this method returns the influence
-        score from dataframe df_inf_score (influence score is determined by topological metric and logFC),
-        if gene isn't in the request signature, then influence score equals zero.
-    """
-
-    def __init__(self, df_inf_score_up, df_inf_score_down):
-        self.df_inf_score_up = df_inf_score_up
-        self.df_inf_score_down = df_inf_score_down
-        self.df_inf_score = pd.concat([df_inf_score_up, df_inf_score_down])['inf_score']
-        self.genes = list(pd.concat([df_inf_score_up, df_inf_score_down]).index)
-        dict_inf_score = {}
-        for (gene, inf_score) in zip(self.genes, self.df_inf_score):
-            dict_inf_score[gene] = inf_score
-        self.dict_inf_score = dict_inf_score
-
-    def get_inf_score(self, gene):
-        try:
-            return self.dict_inf_score[gene]
-        except KeyError:
-            return 1
 
 class Signature:
     """
@@ -85,7 +53,6 @@ class Signature:
         self.id = id
         self.up_genes = up_genes
         self.down_genes = down_genes
-        #self.number_in_signature_list = number_in_signature_list
 
 
 class Signature_pair:
@@ -200,7 +167,7 @@ def create_signature_list(out_from_file_with_signatures):
 
 
 
-def create_inf_score_as_weights_vector(df_inf_score_up, df_inf_score_down, space):
+def create_inf_score_as_weights_vector(dict_inf_score, space):
     """
     creates a vector of weights for calculating the cosine distance
 
@@ -219,11 +186,21 @@ def create_inf_score_as_weights_vector(df_inf_score_up, df_inf_score_down, space
     ------
     list of weights representing influence scores of gene that define the gene space
     """
-    inf_scores = Inf_score(df_inf_score_up, df_inf_score_down)
-    inf_score_as_weights_vector = [inf_scores.get_inf_score(gene) for gene in space]
+    inf_score_as_weights_vector = []
+    for gene in space:
+         try:
+             inf_score_as_weights_vector.append(dict_inf_score[gene])
+         except KeyError:
+             inf_score_as_weights_vector.append(1)
     return inf_score_as_weights_vector
 
-def find_cosine_dist(pair, query_signature, df_inf_score_up, df_inf_score_down):
+    #return list(map(lambda gene : dict_inf_score[gene] , space))
+    #inf_score_as_weights_vector = []
+    #for gene in space:
+    #    inf_score_as_weights_vector.append(dict_inf_score[gene])
+    #return inf_score_as_weights_vector
+
+def find_cosine_dist(pair, query_signature, dict_inf_score):
     """
     Calculates score for request signature and pair of signatures from L1000FWD database based on cosine distance
 
@@ -252,30 +229,33 @@ def find_cosine_dist(pair, query_signature, df_inf_score_up, df_inf_score_down):
     space_1 = list(set(query_signature.down_genes) | set(pair.get_up()))
     pair_up_vector = Gene_vector(pair.get_up(), space_1)
     query_down_vector = Gene_vector(query_signature.down_genes, space_1)
-    vector_inf_score_space_1 = create_inf_score_as_weights_vector(df_inf_score_up,
-                                                                      df_inf_score_down, space_1)
+
+    #vector_inf_score_space_1 = test_f(dict_inf_score, space_1)
+    vector_inf_score_space_1 = create_inf_score_as_weights_vector(dict_inf_score, space_1)
     cosine_distance_1 = cosine(pair_up_vector.coordinates(), query_down_vector.coordinates(), vector_inf_score_space_1)
 
 
     space_2 = list(set(query_signature.up_genes) | set(pair.get_down()))
     pair_down_vector = Gene_vector(pair.get_down(), space_2)
     query_up_vector = Gene_vector(query_signature.up_genes, space_2)
-    vector_inf_score_space_2 = create_inf_score_as_weights_vector(df_inf_score_up,
-                                                                      df_inf_score_down, space_2)
+    #vector_inf_score_space_2 = test_f(dict_inf_score, space_2)
+    vector_inf_score_space_2 = create_inf_score_as_weights_vector(dict_inf_score, space_2)
     cosine_distance_2 = cosine(pair_down_vector.coordinates(), query_up_vector.coordinates(), vector_inf_score_space_2)
     return (cosine_distance_1 + cosine_distance_2) / 2
 
 
 #write func for multiprocessing
-def cosine_dist_for_multiprocessing(i, j, query_signature, df_inf_score_up, df_inf_score_down, signature_list):
-    #start_time = time.time()
+def cosine_dist_for_multiprocessing(i, j, query_signature, dict_inf_score, signature_list):
+
     pair = Signature_pair(signature_list[i], signature_list[j])
-    return (i, j, find_cosine_dist(pair, query_signature, df_inf_score_up, df_inf_score_down))
-    #print(find_cosine_dist(pair, query_signature, df_inf_score_up, df_inf_score_down))
+    #print('косинусное расстояние :', find_cosine_dist(pair, query_signature, dict_inf_score))
+    return (i, j, find_cosine_dist(pair, query_signature, dict_inf_score))
     #print('время работы поиска косинусного расстояния для одной пары:', '--- %s seconds ---' % (time.time() - start_time))
     #return matrix
 
-def cosine_similarity(content_of_file_with_signatures, df_inf_score_up, df_inf_score_down):
+#def f(): return 1
+
+def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_processes):
     """
     Сounts the score based on cosine distance for request signature and pair of signatures
     running through all possible pairs of signatures from L1000FWD database
@@ -296,11 +276,21 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score_up, df_inf_s
     DataFrame whose column names and row indexes are signature IDs. The each element of dataframe represents
     score based on cosine distance for request signature and pair of signatures.
     """
-    query_signature = Signature('query', df_inf_score_up.index, df_inf_score_down.index)
+    print(df_inf_score)
+    list_inf_score  = list(df_inf_score['inf_score'])
+    list_gene = list(df_inf_score.index)
+
+    dict_inf_score = {}
+    print('заполняем словарь')
+    #dict_inf_score = defaultdict(f)
+    for (gene, inf_score) in zip(list_gene, list_inf_score):
+        dict_inf_score[gene] = inf_score
+    print(list(dict_inf_score.keys())[0:20], list(dict_inf_score.values())[0:20])
+    #print(list(df_inf_score[df_inf_score['logFC'] >= 0].index))
+    query_signature = Signature('query', list(df_inf_score[df_inf_score['logFC'] >= 0].index), list(df_inf_score[df_inf_score['logFC'] < 0].index))
+    print("создали сигнатуру запроса")
     signature_list = create_signature_list(content_of_file_with_signatures)
-    print(len(signature_list))
     signature_id_list = [signature.id for signature in signature_list]
-    print(signature_id_list)
 
 
     zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
@@ -308,9 +298,9 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score_up, df_inf_s
     cosine_dist_matrix.index = signature_id_list
     cosine_dist_matrix.columns = signature_id_list
 
-    print("приступаем к распераллеливанию")
-    pool = Pool(processes=5)
-    results = pool.starmap(cosine_dist_for_multiprocessing, [(i, j, query_signature, df_inf_score_up, df_inf_score_down, signature_list) for i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
+    print("приступаем к распараллеливанию")
+    pool = Pool(processes = number_processes)
+    results = pool.starmap(cosine_dist_for_multiprocessing, [(i, j, query_signature, dict_inf_score, signature_list) for i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
     for (i,j, cos_distance) in results:
         cosine_dist_matrix.iloc[i,j] = cos_distance
     return cosine_dist_matrix
@@ -400,7 +390,7 @@ if __name__ == '__main__':
     print("Все прочитали и начинаем работать")
     start_time = time.time()
     total_start_time = time.time()
-    df_cosine_dist_matrix = cosine_similarity(out_of_file_with_signatures, inf_up, inf_down)
+    df_cosine_dist_matrix = cosine_similarity(out_of_file_with_signatures, inf_up, inf_down, namespace.number_processes)
     print('время работы функции поиска косинусного расстояния:', '--- %s seconds ---' % (time.time() - start_time))
     df_cosine_dist_matrix.to_csv(namespace.path_to_dir_save_results + '/cosine_dist_matrix_' + namespace.conversion + '.csv', columns = df_cosine_dist_matrix.columns, index=True)
     start_time = time.time()
