@@ -7,7 +7,7 @@ from requests.exceptions import HTTPError# to handle the responses
 import graph_tool as gt #for make protein networks
 from graph_tool import centrality as ct
 from graph_tool.draw import graph_draw
-
+from sklearn import preprocessing
 import time #to calculate the time
 
 import argparse #read arguments from the command line
@@ -220,7 +220,7 @@ class PPI_graph:
         print('получила датафрейм с метриками за :', '--- %s seconds ---' % (time.time() - start_time))
         return dataframe_all_topolog_metrics
 
-def create_df_gene_topolog_scores_logFC(series_gene_logFC, dataframe_all_topolog_metrics_for_gene_STRING):
+def create_df_gene_topo_scores_logFC(series_gene_logFC, dataframe_all_topolog_metrics_for_gene_STRING):
     """
         creates a dataframe that contains logFC, all topological metrics  and influence score calculated by logFC
         and topological metrics
@@ -237,28 +237,52 @@ def create_df_gene_topolog_scores_logFC(series_gene_logFC, dataframe_all_topolog
         and topological metrics
         """
     df_gene_logFC = pd.DataFrame(series_gene_logFC)
-    df_gene_signature_inf_scores = df_gene_logFC.merge(dataframe_all_topolog_metrics_for_gene_STRING, how='left',
+    df_logFC_topo_scores = df_gene_logFC.merge(dataframe_all_topolog_metrics_for_gene_STRING, how='left',
                                                            left_index=True, right_index=True)
-    df_gene_signature_inf_scores['inf_score'] = np.ones(df_gene_signature_inf_scores.shape[0])
-    dict_coefficient = {}
-    for metric in list(df_gene_signature_inf_scores.columns):
-        dict_coefficient[metric] = 1
-    for gene in list(df_gene_signature_inf_scores.index):
-        for metric in list(df_gene_signature_inf_scores.columns)[:-1]:
-            if (not np.isnan(df_gene_signature_inf_scores.loc[gene, metric])):
-                df_gene_signature_inf_scores.loc[gene, 'inf_score'] = df_gene_signature_inf_scores.loc[gene, 'inf_score'] * \
-                                                    (dict_coefficient[metric] + abs(df_gene_signature_inf_scores.loc[gene, metric]))
-            else:
-                pass
 
-    return df_gene_signature_inf_scores
+    return df_logFC_topo_scores
 
-def create_df_gene_logFC_topol_inf_score (gene_set, species, experimental_score_threshold, series_genes):
+def create_df_gene_logFC_topo_score (gene_set, species, experimental_score_threshold, series_genes):
     array = PPI_numpy_array(gene_set, species, experimental_score_threshold)
     matrix = array.get_interactions_as_adjacency_matrix()
     interactions_graph = PPI_graph(matrix, array.get_dict_number_genes())
-    df_inf = create_df_gene_topolog_scores_logFC(series_genes, interactions_graph.get_dataframe_all_topolog_metrics())
-    return df_inf
+    df_topo = create_df_gene_topo_scores_logFC(series_genes, interactions_graph.get_dataframe_all_topolog_metrics())
+    return df_topo
+
+def concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down):
+    df_topo_concated = pd.concat([df_topo_up, df_topo_down])
+    df_topo_concated_scaled = pd.DataFrame(preprocessing.scale(df_topo_concated))
+    df_topo_concated_scaled.columns = df_topo_concated.columns
+    df_topo_concated_scaled.index = df_topo_concated.index
+    return df_topo_concated_scaled
+
+def calculate_inf_score(df_logFC_topo_scores, func_inf_score, dict_multiplication_factor, dict_additive_factor):
+    df_logFC_topo_scores['inf_score'] = np.ones(df_logFC_topo_scores.shape[0])
+    for gene in list(df_logFC_topo_scores.index):
+        list_multiplication_factor = []
+        list_additive_factor = []
+        list_topo_score = []
+        for metric in list(df_logFC_topo_scores.columns)[:-1]:
+            if (not np.isnan(df_logFC_topo_scores.loc[gene, metric])):
+                list_multiplication_factor.append(dict_multiplication_factor[metric])
+                list_additive_factor.append(dict_additive_factor[metric])
+                list_topo_score.append(abs(df_logFC_topo_scores.loc[gene, metric]))
+            else:
+                pass
+        d_arg = {}
+        d_arg['multiplication factor'] = list_multiplication_factor
+        d_arg['additive_factor'] = list_additive_factor
+        d_arg['topo_score'] = list_topo_score
+        df_logFC_topo_scores.loc[gene,'inf_score'] = func_inf_score(**d_arg)
+    return df_logFC_topo_scores
+
+def func_inf_score_v1(**kwargs):
+    inf_score = 1
+    for (multiplication_factor, additive_factor, topo_score) in zip(kwargs['multiplication factor'], kwargs['additive_factor'], kwargs['topo_score']):
+        inf_score =inf_score * (multiplication_factor * topo_score + additive_factor)
+        #print('после умножения на метрику вышло :', inf_score)
+
+    return inf_score
 
 if __name__ == '__main__':
 
