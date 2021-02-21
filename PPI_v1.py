@@ -8,6 +8,7 @@ import graph_tool as gt #for make protein networks
 from graph_tool import centrality as ct
 from graph_tool.draw import graph_draw
 from sklearn import preprocessing
+from sklearn.preprocessing import StandardScaler
 import time #to calculate the time
 
 import argparse #read arguments from the command line
@@ -251,10 +252,16 @@ def create_df_gene_logFC_topo_score (gene_set, species, experimental_score_thres
 
 def concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down):
     df_topo_concated = pd.concat([df_topo_up, df_topo_down])
-    df_topo_concated_scaled = pd.DataFrame(preprocessing.scale(df_topo_concated))
+    scaler = StandardScaler()
+    df_topo_scaled = scaler.fit_transform(df_topo_concated)
+    df_topo_concated_scaled = pd.DataFrame(df_topo_scaled)
     df_topo_concated_scaled.columns = df_topo_concated.columns
     df_topo_concated_scaled.index = df_topo_concated.index
-    return df_topo_concated_scaled
+
+    #df_topo_concated_scaled = pd.DataFrame(preprocessing.scale(df_topo_concated))
+    #df_topo_concated_scaled.columns = df_topo_concated.columns
+    #df_topo_concated_scaled.index = df_topo_concated.index
+    return df_topo_concated_scaled #_scaled
 
 def calculate_inf_score(df_logFC_topo_scores, func_inf_score, dict_multiplication_factor, dict_additive_factor):
     df_logFC_topo_scores['inf_score'] = np.ones(df_logFC_topo_scores.shape[0])
