@@ -395,7 +395,7 @@ if __name__ == '__main__':
     print('время работы функции поиска косинусного расстояния:', '--- %s seconds ---' % (time.time() - start_time))
     df_cosine_dist_matrix.to_csv(namespace.path_to_dir_save_results + '/cosine_dist_matrix_' + namespace.conversion + '.csv', columns = df_cosine_dist_matrix.columns, index=True)
     start_time = time.time()
-    df_with_signatures_pert_id = find_near_signatures(out_of_file_with_signatures, df_cosine_dist_matrix, namespace.number_pair_signatures,
+    df_with_signatures_pert_id = find_near_signatures(out_of_fgiile_with_signatures, df_cosine_dist_matrix, namespace.number_pair_signatures,
                                                       df_CD_signature_metadata)
     print('время отбора пар сигнатур:', '--- %s seconds ---' % (time.time() - start_time))
     df_with_signatures_pert_id.to_csv(namespace.path_to_dir_save_results + '/closest_pair_sign_id_pert_id_pert_name_score_' + namespace.conversion + '.csv', columns = df_with_signatures_pert_id.columns)
