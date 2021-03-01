@@ -1,18 +1,18 @@
 import time #to calculate the time
 import numpy as np
 import pandas as pd
-from collections import defaultdict
+#from collections import defaultdict
 from scipy.spatial.distance import cosine
 from scipy.stats import rankdata
 import argparse #read arguments from the command line
 import sys
 from multiprocessing import Pool
-from numba import njit
-from numba.typed import Dict
-from numba.core import types
-from create_weight_vector import test_f
-import dill
-from cython.parallel import prange
+#from numba import njit
+#from numba.typed import Dict
+#from numba.core import types
+#from create_weight_vector import test_f
+#import dill
+#from cython.parallel import prange
 
 
 #setting the expected parameters
@@ -246,11 +246,12 @@ def find_cosine_dist(pair, query_signature, dict_inf_score):
 
 #write func for multiprocessing
 def cosine_dist_for_multiprocessing(i, j, query_signature, dict_inf_score, signature_list):
-
+    start_time = time.time()
     pair = Signature_pair(signature_list[i], signature_list[j])
     #print('косинусное расстояние :', find_cosine_dist(pair, query_signature, dict_inf_score))
+    #print('время работы поиска косинусного расстояния для одной пары:',     '--- %s seconds ---' % (time.time() - start_time))
     return (i, j, find_cosine_dist(pair, query_signature, dict_inf_score))
-    #print('время работы поиска косинусного расстояния для одной пары:', '--- %s seconds ---' % (time.time() - start_time))
+
     #return matrix
 
 #def f(): return 1
@@ -277,17 +278,17 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
     score based on cosine distance for request signature and pair of signatures.
     """
     print(df_inf_score)
-    list_inf_score  = list(df_inf_score['inf_score'])
-    list_gene = list(df_inf_score.index)
+    list_inf_score = list(df_inf_score['inf_score'])
+    list_gene = list(df_inf_score.loc['up'].index) + list(df_inf_score.loc['down'].index)
 
     dict_inf_score = {}
     print('заполняем словарь')
     #dict_inf_score = defaultdict(f)
     for (gene, inf_score) in zip(list_gene, list_inf_score):
         dict_inf_score[gene] = inf_score
-    print(list(dict_inf_score.keys())[0:20], list(dict_inf_score.values())[0:20])
+    print(list(dict_inf_score.keys())[0:20], list(dict_inf_score.values())[0:20], max(list(dict_inf_score.values())), min(list(dict_inf_score.values())), np.mean(list(dict_inf_score.values())) )
     #print(list(df_inf_score[df_inf_score['logFC'] >= 0].index))
-    query_signature = Signature('query', list(df_inf_score[df_inf_score['logFC'] >= 0].index), list(df_inf_score[df_inf_score['logFC'] < 0].index))
+    query_signature = Signature('query', list(df_inf_score.loc['up'].index), list(df_inf_score.loc['down'].index))
     print("создали сигнатуру запроса")
     signature_list = create_signature_list(content_of_file_with_signatures)
     signature_id_list = [signature.id for signature in signature_list]
@@ -399,3 +400,4 @@ if __name__ == '__main__':
     print('время отбора пар сигнатур:', '--- %s seconds ---' % (time.time() - start_time))
     df_with_signatures_pert_id.to_csv(namespace.path_to_dir_save_results + '/closest_pair_sign_id_pert_id_pert_name_score_' + namespace.conversion + '.csv', columns = df_with_signatures_pert_id.columns)
     print('полное время работы:', '--- %s seconds ---' % (time.time() - total_start_time))
+    #we are in rework
