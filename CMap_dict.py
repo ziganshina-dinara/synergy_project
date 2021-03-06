@@ -148,14 +148,22 @@ def cosine_distance(query_genes, pair_genes, list_inf_score):
     cosine distance between vector corresponding genes for query signature and vector corresponding genes for pair
     signatures from L1000FWD database
     """
-    set_intersecting_query_pair_genes = set(query_genes) & set(pair_genes)
-    list_genes_in_pair_not_in_query = list(set(pair_genes) - set_intersecting_query_pair_genes)
+    set_intersecting_query_pair_genes = set(query_genes) & set(pair_genes)#find common genes
+    list_genes_in_pair_not_in_query = list(set(pair_genes) - set_intersecting_query_pair_genes)#find genes that are in pair signature, not in query signature
+    # create gene space: there are query genes in the beginning of vecor, then genes that are in pair signature, but not in query signature
+    # vector_space = np.hstack((query_genes, np.array(list_genes_in_pair_not_in_query)))
+
+    # create vector of weights: list of inf_scores is corresponding to genes in query, list of ones is corresponding genes that are only in pair signatures
     vector_weights = np.hstack((list_inf_score, np.ones(len(list_genes_in_pair_not_in_query))))
+
+    # find vector query in gene space: there are only query genes, so there are ones in the beginning of the vector, corresponding to space of query genes
     vector_query = np.hstack((np.ones(len(query_genes)), np.zeros(len(list_genes_in_pair_not_in_query))))
-    first_part_of_vector_pair = np.zeros(len(query_genes))
+    # find pair vector in gene space:
+    first_part_of_vector_pair = np.zeros(len(query_genes))# first check the presence of query genes in pair signature
     for i in range(len(query_genes)):
         if query_genes[i] in pair_genes:
             first_part_of_vector_pair[i] = 1
+    # join the first part of vector, corresponding to space of query genes and second part of vector, corresponding space of genes, that are in pair signature, but not in query signature
     vector_pair = np.hstack((first_part_of_vector_pair, np.ones(len(list_genes_in_pair_not_in_query))))
     cosine_distance = cosine(vector_pair, vector_query, vector_weights)
     return cosine_distance
@@ -257,19 +265,22 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
     cosine_dist_matrix.columns = signature_id_list
 
     print("приступаем к распараллеливанию")
-
+    """
     results = Parallel(n_jobs = number_processes)(delayed(cosine_dist_for_multiprocessing)(i, j, query_signature,
                             list_inf_score_up, list_inf_score_down, signature_list) for i in range(len(signature_list))
         for j in range(len(signature_list)) if i < j)
+    """
+    with Pool(processes=number_processes) as pool:
+        results = pool.starmap(cosine_dist_for_multiprocessing,
+                               [(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list) for
+                                i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
+
     for (i,j, cos_distance) in results:
         cosine_dist_matrix.iloc[i,j] = cos_distance
     return cosine_dist_matrix
 
-    """
-    with Pool(processes=number_processes) as pool:
-        results = pool.starmap(cosine_dist_for_multiprocessing, [(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list) for
-                                                                 i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
-    """
+
+
 
 def find_near_signatures(content_of_file_with_signatures, cosine_dist_matrix, n, df_with_signature_id_pert_id):
     """
