@@ -1,12 +1,14 @@
 import pandas as pd
 import seaborn as sns
+import matplotlib
+import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp
 import json
 import sys
 import argparse
 from statistics import mean
 import time
-from numba import jit
+#from numba import jit
 #setting the expected parameters
 def createParser ():
     parser = argparse.ArgumentParser()
@@ -89,7 +91,6 @@ def split_by_synergy(df_cosine_dist_matrix, list_synergy_pair, list_not_synergy_
     q = 0
     for pair in list_not_synergy_pair:
         q += 1
-        print(q)
         if (pair[0] in list(df_cosine_dist_matrix.index)) and (pair[1] in list(df_cosine_dist_matrix.index)):
             if list(df_cosine_dist_matrix.index).index(pair[0]) < list(df_cosine_dist_matrix.index).index(pair[1]):
                 list_cos_dist_not_synergy_pair.append(df_cosine_dist_matrix.loc[pair[0], pair[1]])
@@ -98,10 +99,12 @@ def split_by_synergy(df_cosine_dist_matrix, list_synergy_pair, list_not_synergy_
     return (list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair)
 
 def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_figure):
+    plt.figure(figsize=(15, 10))
     snsplot = sns.distplot(list_cos_dist_synergy_pair, color = 'green', label = 'synergy')
     snsplot = sns.distplot(list_cos_dist_not_synergy_pair, color = 'b', label = 'not synergy')
     snsplot.legend()
     snsplot.set_xlabel('score')
+    plt.show()
     fig = snsplot.get_figure()
     fig.savefig(path_to_figure)
 
@@ -118,7 +121,7 @@ def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_
     syn, not_syn, all_s = select_sign_id(data, len(number_sign_in_protocol(data)))
     return (syn, not_syn, all_s)
 #@jit
-def statistic_analys_results(set_one, set_two, name_set_one, name_set_two, path_to_results):
+def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
     print(len(set_one), len(set_two))
     if len(set_one) > len(set_two) :
         set_big = set_one
@@ -147,9 +150,6 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two, path_
     dict_statistics['mean ' + name_set_one] = mean(set_one)
     dict_statistics['mean ' + name_set_two] = mean(set_two)
     dict_statistics['difference of averagу'] = mean(set_two) - mean(set_one)
-
-    with open(path_to_results,"w") as write_file:
-        json.dump(dict_statistics, write_file)
     return dict_statistics
 
 if __name__ == '__main__':
