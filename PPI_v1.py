@@ -21,10 +21,11 @@ def createParser ():
     parser.add_argument('-DE', '--path_to_file_with_DE', type = str)
     parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
     parser.add_argument('-pvalue', '--pvalue_threshold', default = 0.01, type = float)
-    parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA/protein_network', type = str)
+    parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA', type = str)
     parser.add_argument('-sp', '--species', default = 9606, type = int)
     parser.add_argument('-exp_thr', '--experimental_score_threshold', default = 0.4, type = float)
-    parser.add_argument('-conv', '--conversion', type=str)
+    parser.add_argument('-source', '--source_type_cell', type=str)
+    parser.add_argument('-target', '--target_type_cell', type=str)
     return parser
 
 
@@ -190,8 +191,8 @@ class PPI_graph:
         graph.edge_properties['trust'] = eprop_trust
         print('confidence score за :', '--- %s seconds ---' % (time.time() - start_time))
 
-        list_metrics = ['betweenness', 'pagerank', 'closeness', 'katz', 'hits_authority', 'hits_hub', 'eigenvector',
-                        'eigentrust'] # 'trust_transitivity'
+        list_metrics = ['betweenness', 'pagerank', 'closeness', 'katz',  'eigenvector',
+                        'eigentrust'] # 'trust_transitivity', 'hits_authority', 'hits_hub',
 
         dict_map = {}
         start_time = time.time()
@@ -199,8 +200,8 @@ class PPI_graph:
         dict_map['pagerank'] = ct.pagerank(graph)
         dict_map['closeness'] = ct.closeness(graph)
         dict_map['katz'] = ct.katz(graph)
-        dict_map['hits_authority'] = ct.hits(graph)[1]
-        dict_map['hits_hub'] = ct.hits(graph)[2]
+        #dict_map['hits_authority'] = ct.hits(graph)[1]
+        #dict_map['hits_hub'] = ct.hits(graph)[2]
         dict_map['eigenvector'] = ct.eigenvector(graph)[1]
         #print('trust_transitivity')
         #"dict_map['trust_transitivity'] = ct.trust_transitivity(graph,  graph.edge_properties["trust"])
@@ -242,7 +243,7 @@ def create_df_gene_topo_scores_logFC(series_gene_logFC, dataframe_all_topolog_me
 
     return df_logFC_topo_scores
 
-def create_df_gene_logFC_topo_score (gene_set, species, experimental_score_threshold, series_genes):
+def create_df_gene_logFC_topo_score_from_beginning(gene_set, species, experimental_score_threshold, series_genes):
     array = PPI_numpy_array(gene_set, species, experimental_score_threshold)
     matrix = array.get_interactions_as_adjacency_matrix()
     interactions_graph = PPI_graph(matrix, array.get_dict_number_genes())
@@ -303,6 +304,7 @@ if __name__ == '__main__':
     down = namespace.path_to_file_with_down_genes.read()
     down = down.split('\n')
 
+    path_to_dir_save_results_conv = namespace.path_to_dir_save_results + '/' + namespace.source_type_cell +'_' + namespace.target_type_cell
 
     #first let's look at genes with increased expression
 
@@ -315,8 +317,8 @@ if __name__ == '__main__':
                                       up_interactions_numpy_array.get_dict_number_genes())
 
     #up_interactions_graph.draw_PPI_graph()
-    up_interactions_graph.save_image_graph(namespace.path_to_dir_save_results + '/up_PPI_grap_tool_' + namespace.conversion + '.png')
-    up_interactions_graph.save_graph(namespace.path_to_dir_save_results + '/up_PPI_graph_tool_' +  namespace.conversion + '.gt')
+    up_interactions_graph.save_image_graph( path_to_dir_save_results_conv + '/PPI_grap_tool_up_' + namespace.source_type_cell+'_' + namespace.target_type_cell + '.png')
+    up_interactions_graph.save_graph(path_to_dir_save_results_conv + '/PPI_graph_tool_up_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.gt')
     print('--- %s seconds ---' % (time.time() - start_time))
 
     q = 0
@@ -331,8 +333,8 @@ if __name__ == '__main__':
     print('number vertices in up', n)
 
     start_time = time.time()
-    df_inf = create_df_gene_topolog_scores_logFC(series_up_genes, up_interactions_graph.get_dataframe_all_topolog_metrics())
-    df_inf.to_csv(namespace.path_to_dir_save_results + '/df_genes_up_inf_score_' + namespace.conversion + '.csv', columns = df_inf.columns, index = True)
+    df_topo_up = create_df_gene_topo_scores_logFC(series_up_genes, up_interactions_graph.get_dataframe_all_topolog_metrics())
+    df_topo_up.to_csv(path_to_dir_save_results_conv + '/df_topo_up_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.csv', columns = df_topo_up.columns, index = True)
     print('получила датафрейм со скорами за :', '--- %s seconds ---' % (time.time() - start_time))
 
 
@@ -344,8 +346,8 @@ if __name__ == '__main__':
     down_interactions_graph = PPI_graph(down_interactions_numpy_array.get_interactions_as_adjacency_matrix(),
                                       down_interactions_numpy_array.get_dict_number_genes())
     # up_interactions_graph.draw_PPI_graph()
-    down_interactions_graph.save_image_graph(namespace.path_to_dir_save_results + '/down_PPI_grap_tool_' + namespace.conversion + '.png')
-    down_interactions_graph.save_graph(namespace.path_to_dir_save_results + '/down_PPI_graph_tool_' +  namespace.conversion + '.gt')
+    down_interactions_graph.save_image_graph(path_to_dir_save_results_conv + '/PPI_grap_tool_down_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.png')
+    down_interactions_graph.save_graph(path_to_dir_save_results_conv + '/PPI_graph_tool_down_' +  namespace.source_type_cell +'_' + namespace.target_type_cell + '.gt')
     print('--- %s seconds ---' % (time.time() - start_time))
 
     q = 0
@@ -360,9 +362,23 @@ if __name__ == '__main__':
     print('number vertices in down', n)
 
     start_time = time.time()
-    df_down_inf = create_df_gene_topolog_scores_logFC(series_down_genes, down_interactions_graph.get_dataframe_all_topolog_metrics())
-    df_down_inf.to_csv(namespace.path_to_dir_save_results + '/df_genes_down_inf_score_' + namespace.conversion + '.csv', columns=df_down_inf.columns, index=True)
+    df_topo_down = create_df_gene_topo_scores_logFC(series_down_genes, down_interactions_graph.get_dataframe_all_topolog_metrics())
+    df_topo_down.to_csv(path_to_dir_save_results_conv + '/df_topo_down_' + namespace.source_type_cell +'_' + namespace.target_type_cell +
+                        '.csv', columns=df_topo_down.columns, index=True)
     print('получила датафрейм со скорами :', '--- %s seconds ---' % (time.time() - start_time))
+
+    df_topo = concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down)
+    df_topo.to_csv(
+        path_to_dir_save_results_conv + '/df_topo_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv',
+        columns=df_topo.columns, index=True)
+    dict_multiplication_factor = {'betweenness': 9.460967341000304, 'closeness': 6.238127619523721, 'eigentrust':
+        8.909487859706598, 'eigenvector': 8.602610008529997, 'katz': 5.917121344183359, 'logFC': 8.187432320368355,
+                                  'pagerank': 3.571469665607328}
+    dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1, 'eigenvector': 1, 'eigentrust': 1}
+    df_inf = calculate_inf_score(df_topo, func_inf_score_v1, dict_multiplication_factor,
+                                       dict_additive_factor)
+    df_inf.to_csv(path_to_dir_save_results_conv + '/df_inf_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv',
+        columns=df_inf.columns, index=True)
 
 
 

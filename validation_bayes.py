@@ -3,7 +3,7 @@ import argparse #read arguments from the command line
 import sys
 import os
 from search_signatures_by_id import create_list_needed_signatures
-from PPI_v1 import create_df_gene_logFC_topo_score, calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
+from PPI_v1 import calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
 from CMap_dict import cosine_similarity
 import pandas as pd
 import json
@@ -22,6 +22,7 @@ def createParser ():
     parser.add_argument('-source', '--source_type_cell', type=str)
     parser.add_argument('-target', '--target_type_cell', type=str)
     parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA', type = str)
+    parser.add_argument('-description', '--description_validation', type=str)
 
     parser.add_argument('-CD_signature_metadata', '--path_to_file_with_CD_signature_metadata',
                         default='DATA/CD_signature_metadata.csv', type=str)
@@ -35,14 +36,13 @@ def createParser ():
 
 
 
-def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coeff_katz, coeff_hits_authority, coeff_hits_hub, coeff_eigenvector, coeff_eigentrust):
+def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coeff_katz, coeff_eigenvector, coeff_eigentrust):
 
-    list_metric = ['logFC', 'betweenness', 'pagerank', 'closeness', 'katz', 'hits_authority', 'hits_hub', 'eigenvector',
+    list_metric = ['logFC', 'betweenness', 'pagerank', 'closeness', 'katz', 'eigenvector',
                    'eigentrust']
-    dict_multiplication_factor = {'logFC': coeff_logFC, 'betweenness':coeff_betweenness, 'pagerank': coeff_pagerank, 'closeness': coeff_closeness, 'katz': coeff_katz, 'hits_authority':
-        coeff_hits_authority, 'hits_hub': coeff_hits_hub, 'eigenvector': coeff_eigenvector, 'eigentrust': coeff_eigentrust}
-    dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1, 'hits_authority':
-        1, 'hits_hub': 1, 'eigenvector': 1, 'eigentrust': 1}
+    dict_multiplication_factor = {'logFC': coeff_logFC, 'betweenness':coeff_betweenness, 'pagerank': coeff_pagerank, 'closeness': coeff_closeness,
+                                  'katz': coeff_katz, 'eigenvector': coeff_eigenvector, 'eigentrust': coeff_eigentrust}
+    dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1, 'eigenvector': 1, 'eigentrust': 1}
 
 
     global i
@@ -56,22 +56,27 @@ def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coe
     global df_up_topo_score
     global df_down_topo_score
     global list_needed_signatures
+    global description
+    global path_to_folder_results_single_parameters
 
     #combined up and down and normalized metrics
     df_topo_score = concat_df_log_FC_topo_score_normalize(df_up_topo_score, df_down_topo_score)
+    #print(df_topo_score)
 
     """
     df_topo_score.to_csv(
         path_to_folder_results + '/df_topo_score_' + source_type_cell + '_' + target_type_cell + '.csv',
         columns=df_topo_score.columns, index=True)
     """
-    path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + source_type_cell + '_' + target_type_cell
+
 
 
 
     # calculate influence score
     df_inf_score = calculate_inf_score(df_topo_score, func_inf_score_v1, dict_multiplication_factor,
                                          dict_additive_factor)
+    print(df_inf_score)
+    print('максимум inf_score: {}\n среднее inf_score: {}'.format(df_inf_score['inf_score'].max(), df_inf_score['inf_score'].mean()))
     """
     df_inf_score.to_csv(
         path_to_folder_results_single_parameters + '/df_inf_' + source_type_cell + '_' + target_type_cell + str(i) + '.csv', 
@@ -105,7 +110,8 @@ def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coe
     draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_'
          + str(i) + '.png')
 
-    df_search_parameters.loc[i] = [i, dict_additive_factor, dict_multiplication_factor, d['average statistic'], d['average pvalue'], d['mean synergy'], d['mean not synergy'], d['mean not synergy'] - d['mean synergy']]
+    df_search_parameters.loc[i] = [i, i, dict_additive_factor, dict_multiplication_factor, d['average statistic'], d['average pvalue'],
+                                   d['mean synergy'], d['mean not synergy'], d['mean not synergy'] - d['mean synergy'], description]
     i += 1
     return d['mean not synergy'] - d['mean synergy']
 
@@ -167,9 +173,11 @@ if __name__ == '__main__':
     df_up_topo_score = pd.read_csv(
         path_to_folder_results + '/df_topo_up_' + source_type_cell + '_' + target_type_cell + '.csv',
         index_col=0)
+    print(df_up_topo_score)
     df_down_topo_score = pd.read_csv(
         path_to_folder_results + '/df_topo_down_' + source_type_cell + '_' + target_type_cell + '.csv',
         index_col=0)
+    print(df_down_topo_score)
     """
     df_search_parameters = pd.DataFrame(
         list(zip([0], [0], [0], [0],
@@ -179,12 +187,17 @@ if __name__ == '__main__':
     """
 
     df_search_parameters = pd.read_csv(path_to_folder_results + '/df_search_parameters_' + source_type_cell + '_' + target_type_cell + '.csv', index_col = 0)
-
+    print(df_search_parameters )
     print('число несинергетических пар:', len(not_syn_sign_id))
     
 
     i = namespace.number_iteration
-
+    description = namespace.description_validation
+    print(description)
+    path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + source_type_cell + '_' + target_type_cell + \
+                                               description
+    os.mkdir(path_to_folder_results_single_parameters)
+    '''
 
     try:
         optimizer = BayesianOptimization(f=synergy,pbounds={'coeff_logFC': (1, 10), 'coeff_betweenness': (1, 10), 'coeff_pagerank': (1, 10),
@@ -224,9 +237,9 @@ if __name__ == '__main__':
 
 
 
-
+    '''
     start = time.time()
-    print("значение функции:", synergy(1, 1, 1, 1, 1, 1, 1, 1, 1))
+    print("значение функции:", synergy(1, 1, 1, 1, 1, 1, 1))
     print("время работы одной итерации :", time.time() - start)
 
 

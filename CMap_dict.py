@@ -246,7 +246,6 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
     DataFrame whose column names and row indexes are signature IDs. The each element of dataframe represents
     score based on cosine distance for request signature and pair of signatures.
     """
-    print(df_inf_score)
     list_signature_up_genes = np.array(df_inf_score.loc['up'].index)
     list_inf_score_up = np.array(df_inf_score.loc['up']['inf_score'])
     list_signature_down_genes = np.array(df_inf_score.loc['down'].index)
