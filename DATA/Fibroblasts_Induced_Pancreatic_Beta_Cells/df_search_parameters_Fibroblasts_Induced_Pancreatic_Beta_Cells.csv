@@ -1,0 +1,2 @@
+,Unnamed: 0.1,id_folder,dict_additive_factor,dict_multiplication_factor,average_statistic,average_p_value,mean_synergy,mean_not_synergy,dif_mean,description
+0,0,2,"{'logFC': 0, 'betweenness': 0, 'pagerank': 0, 'closeness': 0, 'katz': 0, 'hits_authority': 0, 'hits_hub': 0, 'eigenvector': 0, 'eigentrust': 0}","{'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1, 'hits_authority': 1, 'hits_hub': 1, 'eigenvector': 1, 'eigentrust': 1}",0.016785477453580916,0.03704160621831207,0.9665201248350422,0.9666552616755164,0.0001351368404741704,
