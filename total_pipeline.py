@@ -3,7 +3,7 @@ import argparse #read arguments from the command line
 import sys
 from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, make_signature_from_DE
 from PPI_v1 import create_df_gene_logFC_topol_inf_score
-from CMap_dict import cosine_similarity, find_near_signatures
+from CMap_dict import cosine_similarity
 import pandas as pd
 
 def createParser ():
