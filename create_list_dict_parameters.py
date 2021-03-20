@@ -26,10 +26,10 @@ def create_list_additive_multiplication_dicts(lower_additive, upper_additive, lo
             list_dict_additive_factor.append(dict_additive_factor)
             list_dict_multiplication_factor.append(dict_multiplication_factor)
 
-    with open(path_to_dir_save_results + '/' + source_type_cell + '_' + target_type_cell + '/' + 'additive_factor_dicts' + \
+    with open(path_to_dir_save_results + '/' + 'additive_factor_dicts' + \
                          '_' + source_type_cell + '_' + target_type_cell + '.json', 'w') as file:
         json.dump(list_dict_additive_factor, file)
-    with open(path_to_dir_save_results + '/' + source_type_cell + '_' + target_type_cell + '/' + 'multiplication_factor_dicts' + \
+    with open(path_to_dir_save_results + '/' + 'multiplication_factor_dicts' + \
                          '_' + source_type_cell + '_' + target_type_cell + '.json', 'w') as file:
         json.dump(list_dict_multiplication_factor, file)
     return (list_dict_additive_factor, list_dict_multiplication_factor)

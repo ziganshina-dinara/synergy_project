@@ -13,6 +13,7 @@ from create_list_dict_parameters import create_list_additive_multiplication_dict
 
 def createParser ():
     parser = argparse.ArgumentParser()
+    parser.add_argument('-list_pair_signature_id', '--presence_file_with_list_pair_signature_id', default='no', type=str)
     parser.add_argument('-list_genes_string', '--presence_list_genes_string', default = 'no', type=str)
     parser.add_argument('-topo_metric', '--presence_df_with_topolog_metrics', default = 'no', type=str)
     parser.add_argument('-file_signatures', '--presence_file_with_required_signatures', default = 'no', type=str)
@@ -39,8 +40,8 @@ def createParser ():
                         default='DATA/table_of_cell_conversion_and_chemicals_1.csv', type=str)
 
     parser.add_argument('-lower_additive_factor', '--lower_bound_additive_factor_values', default = 1, type = int)
-    parser.add_argument('-upper_additive_factor', '--upper_bound_additive_factor_values', default = 1, type=int)
-    parser.add_argument('-lower_multiplication_factor', '--lower_bound_multiplication_factor_values', default = 2, type=int)
+    parser.add_argument('-upper_additive_factor', '--upper_bound_additive_factor_values', default = 2, type=int)
+    parser.add_argument('-lower_multiplication_factor', '--lower_bound_multiplication_factor_values', default = 1, type=int)
     parser.add_argument('-upper_multiplication_factor', '--upper_bound_multiplication_factor_values', default = 2, type=int)
 
     return parser
@@ -54,7 +55,8 @@ if __name__ == '__main__':
 
     #create folder for results
     path_to_folder_results = namespace.path_to_dir_save_results + '/' + namespace.source_type_cell + '_' + namespace.target_type_cell
-
+    path_to_file_with_DE = path_to_folder_results + '/DE_edgeR_c_' + namespace.target_type_cell + '_' + namespace.source_type_cell + '.txt'
+    print(path_to_file_with_DE)
     #read needed files
     data_CD_signature_metadata = pd.read_csv(namespace.path_to_file_with_CD_signature_metadata, index_col=0)
     data_Drugs_metadata = pd.read_csv(namespace.path_to_file_with_drugs_metadata, index_col=0)
@@ -62,16 +64,30 @@ if __name__ == '__main__':
     file_with_signatures_42809 = namespace.path_to_file_with_signatures.read()
 
     # find sets of signature id by collecting the signature id corresponding to the small molecules from the protocols for this transition
-    syn_sign_id, not_syn_sign_id, all_sign_id = split_signatures(namespace.source_type_cell,
-                                                                 ' '.join(namespace.target_type_cell.split('_')),
-                                                                 data_intersect_CFM_L1000FWD, data_Drugs_metadata,
-                                                                 data_CD_signature_metadata)
-    with open(path_to_folder_results + '/' + 'list_signature_id_syn_' + \
-              '_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'w') as file:
-        json.dump(syn_sign_id, file)
-    with open(path_to_folder_results + '/' + 'list_signature_id_not_syn_' + \
-              '_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'r') as file:
-        json.dump(not_syn_sign_id, file)
+    print('Приступили к разделению id сигнатур')
+    start = time.time()
+    if namespace.presence_file_with_list_pair_signature_id == 'no':
+        syn_sign_id, not_syn_sign_id, all_sign_id = split_signatures(namespace.source_type_cell,
+                                                                     ' '.join(namespace.target_type_cell.split('_')),
+                                                                     data_intersect_CFM_L1000FWD, data_Drugs_metadata,
+                                                                     data_CD_signature_metadata, namespace.number_processes)
+        print('Разделили id сигнатур за :', time.time() - start)
+        with open(path_to_folder_results + '/' + 'list_signature_id_syn_'
+                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'w') as file:
+            json.dump(syn_sign_id, file)
+        with open(path_to_folder_results + '/' + 'list_signature_id_not_syn_' +
+                  namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'w') as file:
+            json.dump(not_syn_sign_id, file)
+    else:
+        with open(path_to_folder_results + '/' + 'list_signature_id_syn_'
+                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json',
+                'r') as file:
+            syn_sign_id = json.load(file)
+        print('число синергетических пар:', len(syn_sign_id))
+        with open(path_to_folder_results + '/' + 'list_signature_id_not_syn_' +
+                  namespace.source_type_cell + '_' + namespace.target_type_cell + '.json',
+                'r') as file:
+            not_syn_sign_id = json.load(file)
 
     #creating list of signatures
     if namespace.presence_file_with_required_signatures == 'no':
@@ -90,10 +106,12 @@ if __name__ == '__main__':
     # creating list of signatures
 
     #big step of calculating topological scores
+    path_to_file_with_DE = path_to_folder_results + '/DE_edgeR_c_' + namespace.target_type_cell + '_' + namespace.source_type_cell + '.txt'
+
     if namespace.presence_df_with_topolog_metrics == 'no':
         if namespace.presence_list_genes_string == 'no':
             start_time = time.time()
-            up, down = get_signature_for_request_in_STRING(namespace.path_to_file_with_DE,
+            up, down = get_signature_for_request_in_STRING(path_to_file_with_DE,
                                                                         namespace.logFC_threshold,
                                                                         namespace.pvalue_threshold, number = 2000, species = namespace.species)
             with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
@@ -106,7 +124,7 @@ if __name__ == '__main__':
                 file.write('\n'.join(down))
             print('время работы создания сигнатуры запроса с учетом проверки наличия генов в string:', '--- %s seconds ---' % (time.time() - start_time))
 
-        elif namespace.presence_list_genes_string == 'yes':
+        else:
 
             with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
                 up = file.read().split("\n")
@@ -115,7 +133,7 @@ if __name__ == '__main__':
                 down = file.read().split("\n")
         # make signature
         start_time = time.time()
-        series_up_genes, series_down_genes = make_signature_from_DE(namespace.path_to_file_with_DE,
+        series_up_genes, series_down_genes = make_signature_from_DE(path_to_file_with_DE,
                                                                         namespace.logFC_threshold,
                                                                         namespace.pvalue_threshold)
         print('время работы создания сигнатуры запроса:', '--- %s seconds ---' % (time.time() - start_time))
@@ -132,13 +150,14 @@ if __name__ == '__main__':
                                 columns = df_down_topo_score.columns, index = True)
         print('время работы вычисления топологических метрик:', '--- %s seconds ---' % (time.time() - start_time))
 
-    elif namespace.presence_df_with_topolog_metrics == 'yes':
+    else:
         df_up_topo_score = pd.read_csv(path_to_folder_results + '/df_topo_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
         df_down_topo_score = pd.read_csv(path_to_folder_results + '/df_topo_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
 
     df_topo = concat_df_log_FC_topo_score_normalize(df_up_topo_score, df_down_topo_score)
+    print('Посчитали inf_score')
     # create parameter dicts
-    list_metric = ['betweenness', 'pagerank', 'closeness', 'katz', 'hits_authority', 'hits_hub', 'eigenvector',
+    list_metric = ['logFC', 'betweenness', 'pagerank', 'closeness', 'katz', 'eigenvector',
                    'eigentrust']
 
     (list_dict_additive_factor, list_dict_multiplication_factor) = create_list_additive_multiplication_dicts(
@@ -149,13 +168,16 @@ if __name__ == '__main__':
 
     for (dict_additive_factor, dict_multiplication_factor, i) in zip(list_dict_additive_factor, list_dict_multiplication_factor,
                                                                      range(len(list_dict_additive_factor) * len(list_dict_multiplication_factor))):
+        print(dict_additive_factor)
+        print(dict_multiplication_factor)
         path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + namespace.source_type_cell + '_' + \
         namespace.target_type_cell + '/total_results_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' + namespace.description
         os.mkdir(path_to_folder_results_single_parameters)
-
+        print(path_to_folder_results_single_parameters)
         # calculate influence score
         df_inf_score = calculate_inf_score(df_topo, func_inf_score_v1, dict_multiplication_factor,
                                            dict_additive_factor)
+        print('начали считать косинусные расстояния')
         start_time = time.time()
         df_cosine_dist_matrix = cosine_similarity(list_needed_signatures, df_inf_score, namespace.number_processes)
         print('время подсчета synergy_score для всех пар:', '--- %s seconds ---' % (time.time() - start_time))

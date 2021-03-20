@@ -22,7 +22,7 @@ def createParser ():
     parser.add_argument('-source', '--source_type_cell', type=str)
     parser.add_argument('-target', '--target_type_cell', type=str)
     parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA', type = str)
-    parser.add_argument('-description', '--description_validation', type=str)
+    parser.add_argument('-desc', '--description', type=str)
 
     parser.add_argument('-CD_signature_metadata', '--path_to_file_with_CD_signature_metadata',
                         default='DATA/CD_signature_metadata.csv', type=str)
@@ -103,6 +103,7 @@ def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coe
     d['dict_additive_factor'] = dict_additive_factor
     d['dict_multiplication_factor'] = dict_multiplication_factor
 
+
     """
     with open(path_to_folder_results_single_parameters + '/dict_results_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' + str(i) + '.json',"w") as write_file:
         json.dump(d, write_file)
@@ -146,23 +147,25 @@ if __name__ == '__main__':
               '_' + source_type_cell + '_' + target_type_cell + '.json', 'r') as file:
         json.dump(not_syn_sign_id, file)
     """
+
+
+    """
     with open(path_to_folder_results + '/list_signature_id_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
             "r") as file:
         all_sign_id = file.read().split('\n')
-        print(all_sign_id[:10])
+        print()
     with open('DATA/CD_signatures_binary_42809.gmt',"r") as file:
         file_with_signatures_42809 = file.read()
+    list_needed_signatures = create_list_needed_signatures(file_with_signatures_42809, all_sign_id)
+    with open( path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
+           "w") as file:
+        file.write('\n'.join(list_needed_signatures))
+    """
 
-
-    #list_needed_signatures = create_list_needed_signatures(file_with_signatures_42809, all_sign_id)
-    #with open( path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
-     #       "w") as file:
-      #  file.write('\n'.join(list_needed_signatures))
     with open(
             path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
             "r") as file:
         list_needed_signatures = file.read()
-    print(list_needed_signatures[:3])
 
 
     with open(path_to_folder_results + '/' + 'list_signature_id_syn_'  + source_type_cell +"_" + target_type_cell + '.json', 'r') as file:
@@ -192,19 +195,19 @@ if __name__ == '__main__':
     
 
     i = namespace.number_iteration
-    description = namespace.description_validation
+    description = namespace.description
     print(description)
-    path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + source_type_cell + '_' + target_type_cell + \
-                                               description
+    path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + source_type_cell + '_' + target_type_cell \
+                                                   + '/Validation_results_' + source_type_cell + '_' + target_type_cell + '_' + description
     os.mkdir(path_to_folder_results_single_parameters)
-    '''
+
 
     try:
         optimizer = BayesianOptimization(f=synergy,pbounds={'coeff_logFC': (1, 10), 'coeff_betweenness': (1, 10), 'coeff_pagerank': (1, 10),
-                    'coeff_closeness': (1, 10), 'coeff_katz': (1, 10), 'coeff_hits_authority': (1, 10), 'coeff_hits_hub': (1, 10),
-                     'coeff_eigenvector': (1, 10), 'coeff_eigentrust':(1,10)}, verbose = 9,random_state = 1)
+                    'coeff_closeness': (1, 10), 'coeff_katz': (1, 10),
+                     'coeff_eigenvector': (1, 10), 'coeff_eigentrust':(1,10)}, verbose = 9, random_state = 1)
 
-        optimizer.set_gp_params(alpha=0.0001)
+        optimizer.set_gp_params(alpha=0.00001)
         optimizer.maximize(init_points=50, n_iter=30)
         print(optimizer.max)
         with open(path_to_folder_results + '/' +  '_max_bayes' + '_' + source_type_cell + '_' + target_type_cell + '.json', 'w') as file:
@@ -241,6 +244,7 @@ if __name__ == '__main__':
     start = time.time()
     print("значение функции:", synergy(1, 1, 1, 1, 1, 1, 1))
     print("время работы одной итерации :", time.time() - start)
+    '''
 
 
 
