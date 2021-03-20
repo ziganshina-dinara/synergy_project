@@ -1,6 +1,5 @@
 import pandas as pd
 import seaborn as sns
-import matplotlib
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp
 import json
@@ -8,7 +7,8 @@ import sys
 import argparse
 from statistics import mean
 import time
-#from numba import jit
+from multiprocessing import Pool
+
 #setting the expected parameters
 def createParser ():
     parser = argparse.ArgumentParser()
@@ -24,7 +24,8 @@ def createParser ():
                         default='DATA/table_of_cell_conversion_and_chemicals_1.csv', type=str)
 
     return parser
-#@jit
+
+
 def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata):
     #для малых молекул из L1000FWD по cid найдем pert_id
     data_intersect_CFM_L1000FWD['pert_id of chemicals in L1000FWD'] = str()
@@ -46,7 +47,7 @@ def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_sign
                     data_intersect_CFM_L1000FWD.iloc[i, 10] = data_intersect_CFM_L1000FWD.iloc[i, 10] + ';' + ';'.join(list(data_CD_signature_metadata[data_CD_signature_metadata['pert_id'] == pert_id].index))
     return data_intersect_CFM_L1000FWD
 
-#@jit
+
 def filter(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD):
     data_intersect_CFM_L1000FWD = data_intersect_CFM_L1000FWD[(data_intersect_CFM_L1000FWD['Source Cell Type'] == str_source_type_cell)
                                             & (data_intersect_CFM_L1000FWD['Target Cell Type'] == str_target_type_cell)]
@@ -54,30 +55,83 @@ def filter(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000F
                                                               'not molecules']
     return data_intersect_CFM_L1000FWD
 
-#@jit
-def select_sign_id(data_intersect_CFM_L1000FWD, n):
-    list_synergy_pair = []
-    for i in range(data_intersect_CFM_L1000FWD.shape[0]):
-        list_sign = data_intersect_CFM_L1000FWD.iloc[i, 10].strip().split(';')
-        for i in range(len(list_sign)-1):
-            for j in range(i+1, len(list_sign)):
-                if not ((list_sign[i], list_sign[j]) in list_synergy_pair) and (not ((list_sign[j], list_sign[i]) in list_synergy_pair)):
-                    list_synergy_pair.append((list_sign[i], list_sign[j]))
 
-    list_not_synergy_pair = []
-    for i in range(data_intersect_CFM_L1000FWD.shape[0] - 1):
-        for j in range(i+1, data_intersect_CFM_L1000FWD.shape[0]):
-            for sign_id_1 in data_intersect_CFM_L1000FWD.iloc[i, 10].split(';'):
-                for sign_id_2 in data_intersect_CFM_L1000FWD.iloc[j, 10].split(';'):
-                    if sign_id_1 != sign_id_2 :
-                        if (not ((sign_id_1, sign_id_2) in list_not_synergy_pair)) and (not ((sign_id_2, sign_id_1) in list_not_synergy_pair)) and (not((sign_id_1, sign_id_2) in list_synergy_pair)) and (not((sign_id_2, sign_id_1) in list_synergy_pair)):
-                            list_not_synergy_pair.append((sign_id_1, sign_id_2))
+def select_pair_sign_id_from_same_protocol(number_protocol, data_intersect_CFM_L1000FWD):
+    pair_sign_id_from_same_protocol = []
+    list_sign_id_in_same_protocol = data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].strip().split(';')
+    list_sign_id_in_same_protocol = list(set(list_sign_id_in_same_protocol))
+    for i in range(len(list_sign_id_in_same_protocol) - 1):
+        for j in range(i + 1, len(list_sign_id_in_same_protocol)):
+                pair_sign_id_from_same_protocol.append((list_sign_id_in_same_protocol[i], list_sign_id_in_same_protocol[j]))
+    return pair_sign_id_from_same_protocol
+
+
+def select_pair_sign_id_from_different_protocol(first_number_protocol, second_number_protocol, data_intersect_CFM_L1000FWD, list_syn_pair_sign_id):
+    list_pair_sign_id_from_different_protocol = []
+    list_sign_id_in_first_protocol = list(set(data_intersect_CFM_L1000FWD.iloc[first_number_protocol, 10].split(';')))
+    list_sign_id_in_second_protocol = list(set(data_intersect_CFM_L1000FWD.iloc[second_number_protocol, 10].split(';')))
+    for sign_id_1 in list_sign_id_in_first_protocol:
+        for sign_id_2 in list_sign_id_in_second_protocol:
+            if sign_id_1 != sign_id_2 :
+                if (not (sign_id_1, sign_id_2) in list_syn_pair_sign_id) & (not (sign_id_2, sign_id_1) in list_syn_pair_sign_id) & (not (sign_id_1, sign_id_2) in list_pair_sign_id_from_different_protocol) & (not (sign_id_2, sign_id_1) in list_pair_sign_id_from_different_protocol):
+                    list_pair_sign_id_from_different_protocol.append((sign_id_1, sign_id_2))
+    return list_pair_sign_id_from_different_protocol
+
+
+def select_sign_id_from_protocol(number_protocol, data_intersect_CFM_L1000FWD):
+    list_sign_id = list(set(data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].split(';')))
+    return list_sign_id
+
+
+def select_sign_id(data_intersect_CFM_L1000FWD, number_processes):
+    # select all synegy pair of signature ids
+    with Pool(processes=number_processes) as pool:
+        results = pool.starmap(select_pair_sign_id_from_same_protocol,
+                               [(i, data_intersect_CFM_L1000FWD) for i in range(data_intersect_CFM_L1000FWD.shape[0])])
+    list_syn_pair_sign_id = []
+    for sub_list_pair_sign_id in results:
+        print(len(sub_list_pair_sign_id))
+        list_syn_pair_sign_id += sub_list_pair_sign_id
+    print('all length', len(list_syn_pair_sign_id))
+    list_syn_pair_sign_id = list(set(list_syn_pair_sign_id))
+    for pair in list_syn_pair_sign_id:
+        if (pair[1], pair[0]) in list_syn_pair_sign_id:
+            list_syn_pair_sign_id.remove((pair[1], pair[0]))
+    print('all length after remove', len(list_syn_pair_sign_id))
+
+    # select all not synegy pair of signature ids
+    with Pool(processes=number_processes) as pool:
+        results = pool.starmap(select_pair_sign_id_from_different_protocol,
+                               [(i, j, data_intersect_CFM_L1000FWD, list_syn_pair_sign_id) for i in
+                                range(data_intersect_CFM_L1000FWD.shape[0]) for j in
+                                range(data_intersect_CFM_L1000FWD.shape[0]) if i < j])
+    list_not_syn_pair_sign_id = []
+    for sub_list_pair_sign_id in results:
+        print(len(sub_list_pair_sign_id))
+        list_not_syn_pair_sign_id += sub_list_pair_sign_id
+    print('all length', len(list_not_syn_pair_sign_id))
+
+    list_not_syn_pair_sign_id = list(set(list_not_syn_pair_sign_id))
+    for pair in list_not_syn_pair_sign_id:
+        if ((pair[1], pair[0]) in list_not_syn_pair_sign_id):
+            list_not_syn_pair_sign_id.remove((pair[1], pair[0]))
+    print('all length after remove', len(list_not_syn_pair_sign_id))
+
+    # select all signature ids
+    with Pool(processes=number_processes) as pool:
+        results = pool.starmap(select_sign_id_from_protocol,
+                               [(i, data_intersect_CFM_L1000FWD) for i in range(data_intersect_CFM_L1000FWD.shape[0])])
     list_sign_id = []
-    for i in range(n):
-        list_sign_id = list_sign_id + data_intersect_CFM_L1000FWD.iloc[i, 10].split(';')
+    for sub_list_sign_id in results:
+        print(len(sub_list_sign_id))
+        list_sign_id += sub_list_sign_id
+    print(len(list_sign_id))
     list_sign_id = list(set(list_sign_id))
-    return (list_synergy_pair, list_not_synergy_pair, list_sign_id)
-#@jit
+    print('all length all sign id', len(list_sign_id))
+
+    return (list_syn_pair_sign_id, list_not_syn_pair_sign_id, list_sign_id)
+
+
 def split_by_synergy(df_cosine_dist_matrix, list_synergy_pair, list_not_synergy_pair):
     list_cos_dist_synergy_pair = []
     for pair in list_synergy_pair:
@@ -98,6 +152,7 @@ def split_by_synergy(df_cosine_dist_matrix, list_synergy_pair, list_not_synergy_
                 list_cos_dist_not_synergy_pair.append(df_cosine_dist_matrix.loc[pair[1], pair[0]])
     return (list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair)
 
+
 def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_figure):
     plt.figure(figsize=(15, 10))
     snsplot = sns.distplot(list_cos_dist_synergy_pair, color = 'green', label = 'synergy')
@@ -108,19 +163,22 @@ def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_fig
     fig = snsplot.get_figure()
     fig.savefig(path_to_figure)
 
+
 def number_sign_in_protocol(data_intersect_CFM_L1000FWD):
     number_sign = []
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
         number_sign.append(len(data_intersect_CFM_L1000FWD.iloc[i, 10].split(';')))
     return number_sign
-#@jit
-def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata):
+
+
+def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata, number_processes):
     data = modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata)
     data = filter(str_source_type_cell, str_target_type_cell, data)
     print(number_sign_in_protocol(data))
-    syn, not_syn, all_s = select_sign_id(data, len(number_sign_in_protocol(data)))
+    syn, not_syn, all_s = select_sign_id(data, number_processes)
     return (syn, not_syn, all_s)
-#@jit
+
+
 def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
     print(len(set_one), len(set_two))
     if len(set_one) > len(set_two) :
