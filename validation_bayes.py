@@ -4,7 +4,7 @@ import sys
 import os
 from search_signatures_by_id import create_list_needed_signatures
 from PPI_v1 import calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
-from CMap_dict import cosine_similarity
+from CMap_dict import find_similarity
 import pandas as pd
 import json
 from validation import split_signatures, split_by_synergy, statistic_analys_results, draw
@@ -58,6 +58,10 @@ def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coe
     global list_needed_signatures
     global description
     global path_to_folder_results_single_parameters
+    global path_to_file_with_query_terms
+    global path_to_file_with_terms
+    global presence_file_with_query_terms
+    global presence_file_with_terms
 
     #combined up and down and normalized metrics
     df_topo_score = concat_df_log_FC_topo_score_normalize(df_up_topo_score, df_down_topo_score)
@@ -85,7 +89,10 @@ def synergy(coeff_logFC, coeff_betweenness, coeff_pagerank, coeff_closeness, coe
     """
 
     start_time = time.time()
-    df_cosine_dist_matrix = cosine_similarity(list_needed_signatures, df_inf_score, namespace.number_processes)
+    df_cosine_dist_matrix, df_tanimoto_coeff = find_similarity(list_needed_signatures, df_inf_score,
+                                                               namespace.number_processes,
+                                                               path_to_file_with_query_terms, path_to_file_with_terms,
+                                                               presence_file_with_query_terms, presence_file_with_terms)
     print('время подсчета synergy_score для всех пар:', '--- %s seconds ---' % (time.time() - start_time))
     """
     df_cosine_dist_matrix.to_csv(path_to_folder_results_single_parameters + '/df_cosine_dict_matrix_' + source_type_cell + '_' +
@@ -181,6 +188,14 @@ if __name__ == '__main__':
         path_to_folder_results + '/df_topo_down_' + source_type_cell + '_' + target_type_cell + '.csv',
         index_col=0)
     print(df_down_topo_score)
+
+    presence_file_with_query_terms = 'yes'
+    path_to_file_with_query_terms = path_to_folder_results + '/query_terms_' + namespace.source_type_cell + '_' + \
+                                    namespace.target_type_cell + '.txt'
+
+    presence_file_with_terms = 'yes'
+    path_to_file_with_terms = path_to_folder_results + '/terms_' + namespace.source_type_cell + '_' + \
+                              namespace.target_type_cell + '.txt'
     """
     df_search_parameters = pd.DataFrame(
         list(zip([0], [0], [0], [0],

@@ -1,15 +1,15 @@
 import time #to calculate the time
 import numpy as np
 import pandas as pd
-#from collections import defaultdict
 from scipy.spatial.distance import cosine
 from scipy.stats import rankdata
 import argparse #read arguments from the command line
 import sys
 from joblib import Parallel, delayed
 from PPI_v1 import concat_df_log_FC_topo_score_normalize, func_inf_score_v1, calculate_inf_score
+from enrichment_analysis import Enrich
 from multiprocessing import Pool
-from calculate_cosine_distance import cosine_distance_by_cython
+
 
 #setting the expected parameters
 def createParser ():
@@ -45,10 +45,20 @@ class Signature:
         number of signature in list with signatures from database ([0, length of the list with signatures))
 
     """
-    def __init__(self, id, up_genes, down_genes):
+    def __init__(self, id, up_genes, down_genes, up_terms=None, down_terms=None):
         self.id = id
         self.up_genes = up_genes
         self.down_genes = down_genes
+        self.up_terms = up_terms
+        self.down_terms = down_terms
+
+    def set_up_terms(self):
+        enrich_up = Enrich(self.up_genes, 0.05)
+        self.up_terms = enrich_up.get_enrichment_results()
+
+    def set_down_terms(self):
+        enrich_down = Enrich(self.down_genes, 0.05)
+        self.down_terms = enrich_down.get_enrichment_results()
 
 
 class Signature_pair:
@@ -87,28 +97,30 @@ class Signature_pair:
     def get_id_signatures(self):
         return (self.signature_1.id, self.signature_2.id)
 
-    def get_up_down(self):
-        up_1 = set(self.signature_1.up_genes)
-        up_2 = set(self.signature_2.up_genes)
-        down_1 = set(self.signature_1.down_genes)
-        down_2 = set(self.signature_2.down_genes)
-        up = up_1 | up_2
-        down = down_1 | down_2
+    @staticmethod
+    def combine_sets(list_up_1, list_up_2, list_down_1, list_down_2):
+        set_up_1 = set(list_up_1)
+        set_up_2 = set(list_up_2)
+        set_down_1 = set(list_down_1)
+        set_down_2 = set(list_down_2)
+        up = set_up_1 | set_up_2
+        down = set_down_1 | set_down_2
         if (up & down):
-            for gene in (up & down):
-                up.discard(gene)
-                down.discard(gene)
+            for term in (up & down):
+                up.discard(term)
+                down.discard(term)
         return (list(up), list(down))
 
-    def get_up(self):
-        up_down = self.get_up_down()
-        return up_down[0]
+    def get_up_down_genes(self):
+        return self.combine_sets(self.signature_1.up_genes, self.signature_2.up_genes, self.signature_1.down_genes, self.signature_2.down_genes)
 
-    def get_down(self):
-        up_down = self.get_up_down()
-        return up_down[1]
+    def get_up_down_terms(self):
+        return self.combine_sets(self.signature_1.up_terms, self.signature_2.up_terms, self.signature_1.down_terms, self.signature_2.down_terms)
 
-def create_signature_list(out_from_file_with_signatures):
+
+
+
+def create_signature_list(out_from_file_with_signatures, path_to_file_with_terms, presence_file_with_terms):
     """
     creates a list of instances of the class Signature by signatures from the contents of the file with signatures
     of L1000FWD database
@@ -122,12 +134,40 @@ def create_signature_list(out_from_file_with_signatures):
     list of instances of the class Signature
     """
     signature_list = []
-    for i in range(0, len(out_from_file_with_signatures.split('\n'))-1, 2):
-        signature_up_list = out_from_file_with_signatures.split('\n')[i].split('\t')
-        signature_down_list = out_from_file_with_signatures.split('\n')[i+1].split('\t')
-        signature = Signature(signature_up_list[0], signature_up_list[2:], signature_down_list[2:])
-        signature_list.append(signature)
+    if presence_file_with_terms == 'no':
+        with open(path_to_file_with_terms, "w") as file:
+            for i in range(0, len(out_from_file_with_signatures.split('\n'))-1, 2):
+                start = time.time()
+                signature_up_list = out_from_file_with_signatures.split('\n')[i].split('\t')
+                signature_down_list = out_from_file_with_signatures.split('\n')[i+1].split('\t')
+                signature = Signature(signature_up_list[0], signature_up_list[2:], signature_down_list[2:])
+                signature.set_up_terms()
+                signature.set_down_terms()
+                signature_list.append(signature)
+                print('up_terms', signature.up_terms)
+                print('down_terms', signature.down_terms)
+                print('time_enrich:', time.time() -start)
+
+                file.write(signature_up_list[0] + '\t' + 'up_terms\t' + '\t'.join(signature.up_terms) + '\n')
+                file.write(signature_down_list[0] + '\t' + 'down_terms\t' + '\t'.join(signature.down_terms) + '\n')
+    else:
+        with open(path_to_file_with_terms, "r") as file:
+            out_from_file_with_terms = file.read()
+            for (i_in_genes, i_in_terms) in zip(range(0, len(out_from_file_with_signatures.split('\n')) - 1, 2),
+                                                range(0, len(out_from_file_with_terms.split('\n')) - 1, 2)):
+                signature_up_list = out_from_file_with_signatures.split('\n')[i_in_genes].split('\t')
+                signature_down_list = out_from_file_with_signatures.split('\n')[i_in_genes + 1].split('\t')
+                terms_up_list = out_from_file_with_terms.split('\n')[i_in_terms].split('\t')
+                #print(terms_up_list[1])
+                #print(terms_up_list)
+                terms_down_list = out_from_file_with_terms.split('\n')[i_in_terms + 1].split('\t')
+                #print(terms_down_list[1])
+                #print(terms_down_list)
+                signature = Signature(signature_up_list[0], signature_up_list[2:], signature_down_list[2:],
+                                      terms_up_list[2:], terms_down_list[2:])
+                signature_list.append(signature)
     return signature_list
+
 
 def cosine_distance(query_genes, pair_genes, list_inf_score):
     """
@@ -192,14 +232,31 @@ def find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_do
     2)cosine distance between vector corresponding genes for increased expression of the request signature and vector
     corresponding genes for decreased expression of the pair of signatures from L1000FWD database
     """
-    pair_up_genes, pair_down_genes = pair.get_up_down()
+    pair_up_genes, pair_down_genes = pair.get_up_down_genes()
+    #print('up_genes', pair_up_genes[:10])
     cosine_distance_1 = cosine_distance(query_signature.down_genes, pair_up_genes, list_inf_score_down)
     cosine_distance_2 = cosine_distance(query_signature.up_genes, pair_down_genes, list_inf_score_up)
-    return (cosine_distance_1 + cosine_distance_2) / 2
+    mean_cosine_distance = (cosine_distance_1 + cosine_distance_2) / 2
 
+
+    return mean_cosine_distance
+
+
+def tanimoto_coeff(list_1, list_2):
+    set_1 = set(list_1)
+    set_2 = set(list_2)
+    intersection = set_1 & set_2
+    return len(intersection) / (len(set_1) + len(set_2) - len(intersection))
+
+
+def find_tanimoto_coeff(pair, query_signature):
+    pair_up_terms, pair_down_terms = pair.get_up_down_terms()
+    mean_tanimoto_coeff = (tanimoto_coeff(query_signature.down_terms, pair_up_terms) +
+                           tanimoto_coeff(query_signature.up_terms, pair_down_terms)) / 2
+    return mean_tanimoto_coeff
 
 #write func for multiprocessing
-def cosine_dist_for_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list):
+def compare_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list):
     """
     Return score for query signature and pair of signatures from L1000FWD database based on cosine distance
 
@@ -221,13 +278,17 @@ def cosine_dist_for_multiprocessing(i, j, query_signature, list_inf_score_up, li
     Return synergy score for query signature and pair of signatures from L1000FWD database based on cosine distance
     """
     start_time = time.time()
+
     pair = Signature_pair(signature_list[i], signature_list[j])
+    cosine_dist = find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down)
+    tanimoto_coeff = find_tanimoto_coeff(pair, query_signature)
     #print('косинусное расстояние :', find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down))
     #print('время работы поиска косинусного расстояния для одной пары:',     '--- %s seconds ---' % (time.time() - start_time))
-    return (i, j, find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down))
+    return (i, j, cosine_dist, tanimoto_coeff)
 
 
-def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_processes):
+def find_similarity(content_of_file_with_signatures, df_inf_score, number_processes, path_to_file_with_query_terms, path_to_file_with_terms,
+                    presence_file_with_query_terms, presence_file_with_terms):
     """
     Сounts the score based on cosine distance for request signature and pair of signatures
     running through all possible pairs of signatures from L1000FWD database
@@ -248,13 +309,25 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
     """
     list_signature_up_genes = np.array(df_inf_score.loc['up'].index)
     list_inf_score_up = np.array(df_inf_score.loc['up']['inf_score'])
-    list_signature_down_genes = np.array(df_inf_score.loc['down'].index)
+    list_signature_down_genes = np.array(df_inf_score.loc
+                                         ['down'].index)
     list_inf_score_down = np.array(df_inf_score.loc['down']['inf_score'])
 
-
-    query_signature = Signature('query', list_signature_up_genes, list_signature_down_genes)
+    if presence_file_with_query_terms != 'no':
+        with open(path_to_file_with_query_terms, "r") as file:
+            list_up_down_terms = file.read().split('\n')
+            up_terms = list_up_down_terms[0].split('\t')[2:]
+            down_terms = list_up_down_terms[1].split('\t')[2:]
+        query_signature = Signature('query', list_signature_up_genes, list_signature_down_genes, up_terms, down_terms)
+    else:
+        query_signature = Signature('query', list_signature_up_genes, list_signature_down_genes)
+        query_signature.set_up_terms()
+        query_signature.set_down_terms()
+        with open(path_to_file_with_query_terms, "w") as file:
+            file.write('query\t' + 'up_terms\t' + '\t'.join(query_signature.up_terms) + '\n')
+            file.write('query\t' + 'down_terms\t' + '\t'.join(query_signature.down_terms) + '\n')
     print("создали сигнатуру запроса")
-    signature_list = create_signature_list(content_of_file_with_signatures)
+    signature_list = create_signature_list(content_of_file_with_signatures, path_to_file_with_terms, presence_file_with_terms)
     signature_id_list = [signature.id for signature in signature_list]
 
 
@@ -263,6 +336,11 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
     cosine_dist_matrix.index = signature_id_list
     cosine_dist_matrix.columns = signature_id_list
 
+    zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
+    tanimoto_matrix = pd.DataFrame(zeros_array)
+    tanimoto_matrix.index = signature_id_list
+    tanimoto_matrix.columns = signature_id_list
+
     print("приступаем к распараллеливанию")
     """
     results = Parallel(n_jobs = number_processes)(delayed(cosine_dist_for_multiprocessing)(i, j, query_signature,
@@ -270,13 +348,14 @@ def cosine_similarity(content_of_file_with_signatures, df_inf_score, number_proc
         for j in range(len(signature_list)) if i < j)
     """
     with Pool(processes=number_processes) as pool:
-        results = pool.starmap(cosine_dist_for_multiprocessing,
+        results = pool.starmap(compare_multiprocessing,
                                [(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list) for
                                 i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
 
-    for (i,j, cos_distance) in results:
+    for (i,j, cos_distance, tanimoto_coeff) in results:
         cosine_dist_matrix.iloc[i,j] = cos_distance
-    return cosine_dist_matrix
+        tanimoto_matrix.iloc[i,j] = tanimoto_coeff
+    return (cosine_dist_matrix, tanimoto_matrix)
 
 
 
@@ -302,6 +381,7 @@ def find_near_signatures(content_of_file_with_signatures, cosine_dist_matrix, n,
     DataFrame that contains the signature ID of closest pair of signature (their score) and their corresponding perturbation ID, name
     """
     signature_list = create_signature_list(content_of_file_with_signatures)
+
     signature_id_list = []
     for signature in signature_list:
         signature_id_list.append(signature.id)

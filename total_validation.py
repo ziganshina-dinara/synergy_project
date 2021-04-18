@@ -5,7 +5,7 @@ import os
 import json
 from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, make_signature_from_DE
 from PPI_v1 import create_df_gene_logFC_topo_score_from_beginning, calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
-from CMap_dict import cosine_similarity, find_near_signatures
+from CMap_dict import find_similarity, find_near_signatures
 import pandas as pd
 from validation import split_signatures, split_by_synergy, statistic_analys_results, draw
 from search_signatures_by_id import create_list_needed_signatures
@@ -17,6 +17,8 @@ def createParser ():
     parser.add_argument('-list_genes_string', '--presence_list_genes_string', default = 'no', type=str)
     parser.add_argument('-topo_metric', '--presence_df_with_topolog_metrics', default = 'no', type=str)
     parser.add_argument('-file_signatures', '--presence_file_with_required_signatures', default = 'no', type=str)
+    parser.add_argument('-file_query_terms', '--presence_file_with_query_terms', default='no', type=str)
+    parser.add_argument('-file_terms', '--presence_file_with_terms', default='no', type=str)
 
     parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
     parser.add_argument('-pvalue', '--pvalue_threshold', default = 0.01, type = float)
@@ -64,10 +66,11 @@ if __name__ == '__main__':
     file_with_signatures_42809 = namespace.path_to_file_with_signatures.read()
 
     # find sets of signature id by collecting the signature id corresponding to the small molecules from the protocols for this transition
-    print('Приступили к разделению id сигнатур')
+
     start = time.time()
     if namespace.presence_file_with_list_pair_signature_id == 'no':
-        syn_sign_id, not_syn_sign_id, all_sign_id = split_signatures(namespace.source_type_cell,
+        print('Приступили к разделению id сигнатур')
+        syn_sign_id, not_syn_sign_id, all_sign_id = split_signatures(' '.join(namespace.source_type_cell.split('_')),
                                                                      ' '.join(namespace.target_type_cell.split('_')),
                                                                      data_intersect_CFM_L1000FWD, data_Drugs_metadata,
                                                                      data_CD_signature_metadata, namespace.number_processes)
@@ -179,23 +182,57 @@ if __name__ == '__main__':
                                            dict_additive_factor)
         print('начали считать косинусные расстояния')
         start_time = time.time()
-        df_cosine_dist_matrix = cosine_similarity(list_needed_signatures, df_inf_score, namespace.number_processes)
+
+
+        presence_file_with_query_terms = namespace.presence_file_with_query_terms
+        path_to_file_with_query_terms = path_to_folder_results + '/query_terms_' + namespace.source_type_cell + '_' + \
+                                            namespace.target_type_cell + '.txt'
+
+        presence_file_with_terms = namespace.presence_file_with_terms
+        path_to_file_with_terms = path_to_folder_results + '/terms_' + namespace.source_type_cell + '_' + \
+                                        namespace.target_type_cell + '.txt'
+
+        df_cosine_dist_matrix, df_tanimoto_coeff = find_similarity(list_needed_signatures, df_inf_score, namespace.number_processes,
+                                                    path_to_file_with_query_terms, path_to_file_with_terms, presence_file_with_query_terms, presence_file_with_terms)
+        print(df_cosine_dist_matrix)
+        print(df_tanimoto_coeff)
         print('время подсчета synergy_score для всех пар:', '--- %s seconds ---' % (time.time() - start_time))
 
         df_cosine_dist_matrix.to_csv(
             path_to_folder_results_single_parameters + '/df_cosine_dict_matrix_' + namespace.source_type_cell + '_' +
-            namespace.target_type_cell + str(i) + '.csv', columns=df_cosine_dist_matrix.columns, index=True)
-        #see results
+            namespace.target_type_cell +  '.csv', columns=df_cosine_dist_matrix.columns, index=True)
+
+        df_tanimoto_coeff.to_csv(
+            path_to_folder_results_single_parameters + '/df_tanimoto_coeff_' + namespace.source_type_cell + '_' +
+            namespace.target_type_cell +  '.csv', columns=df_cosine_dist_matrix.columns, index=True)
+
+        # see results_with_cosine_distance
         syn_split, not_syn_split = split_by_synergy(df_cosine_dist_matrix, syn_sign_id, not_syn_sign_id)
         print(len(syn_split), len(not_syn_split))
         d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
         d['dict_additive_factor'] = dict_additive_factor
         d['dict_multiplication_factor'] = dict_multiplication_factor
-        draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_' + namespace.source_type_cell + '_' + namespace.target_type_cell +'.png' )
+        draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_cosine_dict_' + namespace.source_type_cell + '_' + namespace.target_type_cell +'.png' )
 
         with open(
-                path_to_folder_results_single_parameters + '/dict_results_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
+                path_to_folder_results_single_parameters + '/dict_results_cosine_dict_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
                                                  '.json', "w") as write_file:
             json.dump(d, write_file)
+
+
+        # see results_with_tanimoto
+        syn_split, not_syn_split = split_by_synergy(df_tanimoto_coeff, syn_sign_id, not_syn_sign_id)
+        print(len(syn_split), len(not_syn_split))
+        d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
+        d['dict_additive_factor'] = dict_additive_factor
+        d['dict_multiplication_factor'] = dict_multiplication_factor
+        draw(syn_split, not_syn_split,
+             path_to_folder_results_single_parameters + '/fig_tanimoto_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.png')
+
+        with open(
+                path_to_folder_results_single_parameters + '/dict_results_tanimoto_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
+                                                 '.json', "w") as write_file:
+            json.dump(d, write_file)
+
 
 

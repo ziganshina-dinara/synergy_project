@@ -1,13 +1,16 @@
 import pandas as pd
 import seaborn as sns
+import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp
+print('stats')
 import json
 import sys
 import argparse
 from statistics import mean
 import time
 from multiprocessing import Pool
+import math
 
 #setting the expected parameters
 def createParser ():
@@ -187,24 +190,45 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
     else:
         set_big = set_two
         set_small = set_one
-    p_value_list = []
+    n = len(set_big) // len(set_small) + 1
+    p_value_list = np.empty(n, dtype=float)
+    log_p_value_list = np.empty(n, dtype=float)
+    log_10_p_value_list = np.empty(n, dtype=float)
+    p_list = []
     stat_list = []
-    for i in range(len(set_big) // len(set_small) + 1):
+    for i in range(n):
         set_big_split = set_big[i * len(set_small): (i + 1) * len(set_small)]
         if len(set_big_split) != len(set_small):
             set_big_split = set_big_split + set_big[0: (len(set_small) - len(set_big_split))]
         (stat, p_value) = ks_2samp(set_big_split, set_small)
-        p_value_list.append(p_value)
-        print(i, p_value)
-        print(len(set_big_split), len(set_small))
+        p = np.float64(ks_2samp(set_big_split, set_small)[1])
+        print(p)
+        #print(ks_2samp(set_big_split, set_small)[1])
+        #print(math.log(ks_2samp(set_big_split, set_small)[1]))
+
+        #log_p_value = math.log(ks_2samp(set_big_split, set_small)[1])
+        #log_10_p_value = math.log10(ks_2samp(set_big_split, set_small)[1])
+        #p_value_list[i] = p_value
+        #log_p_value_list[i] = log_p_value
+        #log_10_p_value_list[i] = log_10_p_value
         stat_list.append(stat)
-    average_p_value = mean(p_value_list)
+        p_list.append(p)
+    print(p_list)
+    #print(log_p_value_list)
+    #print(log_10_p_value_list)
+
+
+    average_p_value = mean(p_list)
     average_stat = mean(stat_list)
     dict_statistics= {}
     dict_statistics['average statistic'] = average_stat
     dict_statistics['average pvalue'] = average_p_value
+    #dict_statistics['log average pvalue'] = math.log(average_p_value)
+    #dict_statistics['log_10 average pvalue'] = math.log10(average_p_value)
     dict_statistics['statistic values'] = stat_list
-    dict_statistics['pvalue values'] = p_value_list
+    dict_statistics['pvalue values'] = p_list
+    #dict_statistics['log pvalue values'] = log_p_value_list
+    #dict_statistics['log_10 pvalue values'] = log_10_p_value_list
     dict_statistics['mean ' + name_set_one] = mean(set_one)
     dict_statistics['mean ' + name_set_two] = mean(set_two)
     dict_statistics['difference of averagу'] = mean(set_two) - mean(set_one)
