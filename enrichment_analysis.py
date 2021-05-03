@@ -1,9 +1,27 @@
 import json
 import requests
 import time
-from CMap_dict import create_signature_list
 from function_signature_from_DE_v1 import make_signature_from_DE
+
+
 class Enrich:
+    """
+    Сlass Enrich: is used to enrichment analysis
+
+    Attributes
+    ----------
+    gene_list: list
+        list of genes with increased or decreased expression
+    threshold : int
+        p_value threshold
+
+    Methods
+    -------
+    analyze_gene_list()
+        sends a request
+    get_enrichment_results()
+        get enrichment results
+    """
 
     def __init__(self, gene_list, threshold):
         self.gene_list = gene_list
@@ -31,7 +49,7 @@ class Enrich:
         ENRICHR_URL = 'http://maayanlab.cloud/Enrichr/enrich'
         query_string = '?userListId=%s&backgroundType=%s'
         user_list_id = self.analyze_gene_list()
-        gene_set_library = 'KEGG_2015'
+        gene_set_library = 'KEGG_2019_Human'
         response = requests.get(
             ENRICHR_URL + query_string % (user_list_id, gene_set_library)
         )
@@ -39,7 +57,7 @@ class Enrich:
             raise Exception('Error fetching enrichment results')
 
         dict_results = json.loads(response.text)
-        list_results = [i[1] for i in dict_results['KEGG_2015'] if i[4] >= self.threshold]
+        list_results = [i[1] for i in dict_results['KEGG_2019_Human'] if i[2] < self.threshold]
         return list_results
 
 

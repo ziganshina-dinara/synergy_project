@@ -7,7 +7,7 @@ from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, m
 from PPI_v1 import create_df_gene_logFC_topo_score_from_beginning, calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
 from CMap_dict import find_similarity, find_near_signatures
 import pandas as pd
-from validation import split_signatures, split_by_synergy, statistic_analys_results, draw
+from validation import split_signatures, split_by_synergy, statistic_analys_results, draw, count_synergy_pair_in_top50
 from search_signatures_by_id import create_list_needed_signatures
 from create_list_dict_parameters import create_list_additive_multiplication_dicts
 
@@ -19,6 +19,8 @@ def createParser ():
     parser.add_argument('-file_signatures', '--presence_file_with_required_signatures', default = 'no', type=str)
     parser.add_argument('-file_query_terms', '--presence_file_with_query_terms', default='no', type=str)
     parser.add_argument('-file_terms', '--presence_file_with_terms', default='no', type=str)
+    parser.add_argument('-dict_multiplication', '--presence_dict_multiplication_factor', default='no', type=str)
+    parser.add_argument('-list_metrics', '--list_metrics_for_pair', default='cosine_dist', type=str)
 
     parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
     parser.add_argument('-pvalue', '--pvalue_threshold', default = 0.01, type = float)
@@ -139,6 +141,7 @@ if __name__ == '__main__':
         series_up_genes, series_down_genes = make_signature_from_DE(path_to_file_with_DE,
                                                                         namespace.logFC_threshold,
                                                                         namespace.pvalue_threshold)
+
         print('время работы создания сигнатуры запроса:', '--- %s seconds ---' % (time.time() - start_time))
 
         # calculate topological metrics and inf_score
@@ -163,11 +166,19 @@ if __name__ == '__main__':
     list_metric = ['logFC', 'betweenness', 'pagerank', 'closeness', 'katz', 'eigenvector',
                    'eigentrust']
 
-    (list_dict_additive_factor, list_dict_multiplication_factor) = create_list_additive_multiplication_dicts(
-        namespace.lower_bound_additive_factor_values,
-        namespace.upper_bound_additive_factor_values, namespace.lower_bound_multiplication_factor_values,
-        namespace.upper_bound_multiplication_factor_values,
-        list_metric, namespace.source_type_cell, namespace.target_type_cell, path_to_folder_results)
+    if namespace.presence_dict_multiplication_factor == 'no':
+        (list_dict_additive_factor, list_dict_multiplication_factor) = create_list_additive_multiplication_dicts(
+            namespace.lower_bound_additive_factor_values,
+            namespace.upper_bound_additive_factor_values, namespace.lower_bound_multiplication_factor_values,
+            namespace.upper_bound_multiplication_factor_values,
+            list_metric, namespace.source_type_cell, namespace.target_type_cell, path_to_folder_results)
+    else:
+        with open('DATA/dict_multiplication_optimal_factor.json', 'r') as file:
+            dict_multiplication_optimal_factor = json.load(file)
+        list_dict_multiplication_factor = [dict_multiplication_optimal_factor]
+        dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1,
+                                'eigenvector': 1, 'eigentrust': 1}
+        list_dict_additive_factor = [dict_additive_factor]
 
     for (dict_additive_factor, dict_multiplication_factor, i) in zip(list_dict_additive_factor, list_dict_multiplication_factor,
                                                                      range(len(list_dict_additive_factor) * len(list_dict_multiplication_factor))):
@@ -191,48 +202,30 @@ if __name__ == '__main__':
         presence_file_with_terms = namespace.presence_file_with_terms
         path_to_file_with_terms = path_to_folder_results + '/terms_' + namespace.source_type_cell + '_' + \
                                         namespace.target_type_cell + '.txt'
+        list_metrics_for_pair = namespace.list_metrics_for_pair.split(';')
+        print(list_metrics_for_pair)
+        list_metric_name_with_matrix = find_similarity(list_needed_signatures, df_inf_score, namespace.number_processes,
+                                                    path_to_file_with_query_terms, path_to_file_with_terms, presence_file_with_query_terms,
+                                                                   presence_file_with_terms, list_metrics_for_pair)
+        print('время подсчета synergy_metrics для всех пар:', '--- %s seconds ---' % (time.time() - start_time))
+        for (metric_name, matrix) in list_metric_name_with_matrix:
+            matrix.to_csv(
+                path_to_folder_results_single_parameters + '/df_' + metric_name + '_matrix_' + namespace.source_type_cell + '_' +
+                namespace.target_type_cell +  '.csv', columns=matrix.columns, index=True)
 
-        df_cosine_dist_matrix, df_tanimoto_coeff = find_similarity(list_needed_signatures, df_inf_score, namespace.number_processes,
-                                                    path_to_file_with_query_terms, path_to_file_with_terms, presence_file_with_query_terms, presence_file_with_terms)
-        print(df_cosine_dist_matrix)
-        print(df_tanimoto_coeff)
-        print('время подсчета synergy_score для всех пар:', '--- %s seconds ---' % (time.time() - start_time))
+            # see results
+            syn_split, not_syn_split = split_by_synergy( matrix, syn_sign_id, not_syn_sign_id)
+            print(len(syn_split), len(not_syn_split))
+            d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
+            d['dict_additive_factor'] = dict_additive_factor
+            d['dict_multiplication_factor'] = dict_multiplication_factor
+            d['count_synergy_pair_in_top50'] = count_synergy_pair_in_top50(syn_sign_id, matrix)
+            draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_' + metric_name + '_' + namespace.source_type_cell + '_' + \
+                 namespace.target_type_cell +'.png' )
+            with open(path_to_folder_results_single_parameters + '/dict_results_' + metric_name + '_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
+                                                     '.json', "w") as write_file:
+                json.dump(d, write_file)
 
-        df_cosine_dist_matrix.to_csv(
-            path_to_folder_results_single_parameters + '/df_cosine_dict_matrix_' + namespace.source_type_cell + '_' +
-            namespace.target_type_cell +  '.csv', columns=df_cosine_dist_matrix.columns, index=True)
-
-        df_tanimoto_coeff.to_csv(
-            path_to_folder_results_single_parameters + '/df_tanimoto_coeff_' + namespace.source_type_cell + '_' +
-            namespace.target_type_cell +  '.csv', columns=df_cosine_dist_matrix.columns, index=True)
-
-        # see results_with_cosine_distance
-        syn_split, not_syn_split = split_by_synergy(df_cosine_dist_matrix, syn_sign_id, not_syn_sign_id)
-        print(len(syn_split), len(not_syn_split))
-        d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
-        d['dict_additive_factor'] = dict_additive_factor
-        d['dict_multiplication_factor'] = dict_multiplication_factor
-        draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_cosine_dict_' + namespace.source_type_cell + '_' + namespace.target_type_cell +'.png' )
-
-        with open(
-                path_to_folder_results_single_parameters + '/dict_results_cosine_dict_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
-                                                 '.json', "w") as write_file:
-            json.dump(d, write_file)
-
-
-        # see results_with_tanimoto
-        syn_split, not_syn_split = split_by_synergy(df_tanimoto_coeff, syn_sign_id, not_syn_sign_id)
-        print(len(syn_split), len(not_syn_split))
-        d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
-        d['dict_additive_factor'] = dict_additive_factor
-        d['dict_multiplication_factor'] = dict_multiplication_factor
-        draw(syn_split, not_syn_split,
-             path_to_folder_results_single_parameters + '/fig_tanimoto_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.png')
-
-        with open(
-                path_to_folder_results_single_parameters + '/dict_results_tanimoto_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
-                                                 '.json', "w") as write_file:
-            json.dump(d, write_file)
 
 
 

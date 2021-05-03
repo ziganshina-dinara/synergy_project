@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cosine
 from scipy.stats import rankdata
+from sklearn.metrics import mutual_info_score
 import argparse #read arguments from the command line
 import sys
 from joblib import Parallel, delayed
@@ -255,8 +256,28 @@ def find_tanimoto_coeff(pair, query_signature):
                            tanimoto_coeff(query_signature.up_terms, pair_down_terms)) / 2
     return mean_tanimoto_coeff
 
+
+def find_mutual_info_score(sign_1, sign_2, query_signature):
+    intersection_sign_1_up_terms = list(set(sign_1.up_terms) & set(query_signature.down_terms))
+    print('intersection_sign_1_up_terms', len(intersection_sign_1_up_terms), intersection_sign_1_up_terms)
+    intersection_sign_2_up_terms = list(set(sign_2.up_terms) & set(query_signature.down_terms))
+    print('intersection_sign_2_up_terms', len(intersection_sign_2_up_terms), intersection_sign_2_up_terms)
+    mutual_info_score_up = mutual_info_score(intersection_sign_1_up_terms, intersection_sign_2_up_terms)
+    print(mutual_info_score_up)
+
+    intersection_sign_1_down_terms = list(set(sign_1.down_terms) & set(query_signature.up_terms))
+    print('intersection_sign_1_down_terms', len(intersection_sign_1_down_terms), intersection_sign_1_down_terms)
+    intersection_sign_2_down_terms = list(set(sign_2.down_terms) & set(query_signature.up_terms))
+    print('intersection_sign_2_down_terms', len(intersection_sign_2_down_terms), intersection_sign_2_down_terms)
+    mutual_info_score_down = mutual_info_score(intersection_sign_1_down_terms, intersection_sign_2_down_terms)
+    print(mutual_info_score_down)
+
+    mean_mutual_info_score = (mutual_info_score_up + mutual_info_score_down) /2
+    return mean_mutual_info_score
+
+
 #write func for multiprocessing
-def compare_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list):
+def compare_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list, list_metrics):
     """
     Return score for query signature and pair of signatures from L1000FWD database based on cosine distance
 
@@ -280,15 +301,23 @@ def compare_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_s
     start_time = time.time()
 
     pair = Signature_pair(signature_list[i], signature_list[j])
-    cosine_dist = find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down)
-    tanimoto_coeff = find_tanimoto_coeff(pair, query_signature)
+    return_list = [i, j]
+    if 'cosine_dist' in list_metrics:
+        cosine_dist = find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down)
+        return_list.append(('cosine_dist', cosine_dist))
+    if 'tanimoto_coeff' in list_metrics:
+        tanimoto_coeff = find_tanimoto_coeff(pair, query_signature)
+        return_list.append(('tanimoto_coeff', tanimoto_coeff))
+    if 'mutual_info_coeff' in list_metrics:
+        mutual_info_coeff = find_mutual_info_score(signature_list[i], signature_list[j], query_signature)
+        return_list.append(('mutual_info_coeff', mutual_info_coeff))
     #print('косинусное расстояние :', find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down))
     #print('время работы поиска косинусного расстояния для одной пары:',     '--- %s seconds ---' % (time.time() - start_time))
-    return (i, j, cosine_dist, tanimoto_coeff)
+    return tuple(return_list)
 
 
 def find_similarity(content_of_file_with_signatures, df_inf_score, number_processes, path_to_file_with_query_terms, path_to_file_with_terms,
-                    presence_file_with_query_terms, presence_file_with_terms):
+                    presence_file_with_query_terms, presence_file_with_terms, list_metrics):
     """
     Сounts the score based on cosine distance for request signature and pair of signatures
     running through all possible pairs of signatures from L1000FWD database
@@ -329,18 +358,30 @@ def find_similarity(content_of_file_with_signatures, df_inf_score, number_proces
     print("создали сигнатуру запроса")
     signature_list = create_signature_list(content_of_file_with_signatures, path_to_file_with_terms, presence_file_with_terms)
     signature_id_list = [signature.id for signature in signature_list]
+    dict_metics_matrix = {}
 
+    if 'cosine_dist' in list_metrics:
+        zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
+        cosine_dist_matrix = pd.DataFrame(zeros_array)
+        cosine_dist_matrix.index = signature_id_list
+        cosine_dist_matrix.columns = signature_id_list
+        dict_metics_matrix['cosine_dist'] = cosine_dist_matrix
 
-    zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
-    cosine_dist_matrix = pd.DataFrame(zeros_array)
-    cosine_dist_matrix.index = signature_id_list
-    cosine_dist_matrix.columns = signature_id_list
+    if 'tanimoto_coeff' in list_metrics:
+        zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
+        tanimoto_matrix = pd.DataFrame(zeros_array)
+        tanimoto_matrix.index = signature_id_list
+        tanimoto_matrix.columns = signature_id_list
+        dict_metics_matrix['tanimoto_coeff'] = tanimoto_matrix
 
-    zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
-    tanimoto_matrix = pd.DataFrame(zeros_array)
-    tanimoto_matrix.index = signature_id_list
-    tanimoto_matrix.columns = signature_id_list
+    if 'mutual_info_coeff' in list_metrics:
+        zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
+        mutual_info_matrix = pd.DataFrame(zeros_array)
+        mutual_info_matrix.index = signature_id_list
+        mutual_info_matrix.columns = signature_id_list
+        dict_metics_matrix['mutual_info_coeff'] = mutual_info_matrix
 
+    list_metric_name_with_matrix = []
     print("приступаем к распараллеливанию")
     """
     results = Parallel(n_jobs = number_processes)(delayed(cosine_dist_for_multiprocessing)(i, j, query_signature,
@@ -349,13 +390,17 @@ def find_similarity(content_of_file_with_signatures, df_inf_score, number_proces
     """
     with Pool(processes=number_processes) as pool:
         results = pool.starmap(compare_multiprocessing,
-                               [(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list) for
+                               [(i, j, query_signature, list_inf_score_up, list_inf_score_down, signature_list, list_metrics) for
                                 i in range(len(signature_list)) for j in range(len(signature_list)) if i < j])
 
-    for (i,j, cos_distance, tanimoto_coeff) in results:
-        cosine_dist_matrix.iloc[i,j] = cos_distance
-        tanimoto_matrix.iloc[i,j] = tanimoto_coeff
-    return (cosine_dist_matrix, tanimoto_matrix)
+    for res in results:
+        i = res[0]
+        j = res[1]
+        for (metric_name, metric_value) in res[2:]:
+            dict_metics_matrix[metric_name].iloc[i,j] = metric_value
+    for metric_name in list_metrics:
+        list_metric_name_with_matrix.append((metric_name, dict_metics_matrix[metric_name]))
+    return tuple(list_metric_name_with_matrix)
 
 
 
