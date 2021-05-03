@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, rankdata
 print('stats')
 import json
 import sys
@@ -169,9 +169,13 @@ def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_fig
 
 def number_sign_in_protocol(data_intersect_CFM_L1000FWD):
     number_sign = []
+    list_sign = []
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
-        number_sign.append(len(data_intersect_CFM_L1000FWD.iloc[i, 10].split(';')))
-    return number_sign
+        number_sign.append(len(set(data_intersect_CFM_L1000FWD.iloc[i, 10].split(';'))))
+        list_sign = list_sign + list(set(data_intersect_CFM_L1000FWD.iloc[i, 10].split(';')))
+    number_all_sign = len(set(list_sign))
+    d = {'number_sign_protocol': number_sign, 'number_all_sign': number_all_sign }
+    return d
 
 
 def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata, number_processes):
@@ -180,6 +184,28 @@ def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_
     print(number_sign_in_protocol(data))
     syn, not_syn, all_s = select_sign_id(data, number_processes)
     return (syn, not_syn, all_s)
+
+
+def rank_pair_based_syn_score(df_cosine_dist_matrix):
+    signature_id_list = list(df_cosine_dist_matrix.index)
+    list_pair_signatures_id_ranked = []
+    n = df_cosine_dist_matrix.shape[0]
+    rank_array = rankdata(df_cosine_dist_matrix, method='dense')
+    for i in range(np.min(rank_array), np.min(rank_array) + n, 1):
+        for j in range(len(rank_array)):
+            if rank_array[j] == i:
+                list_pair_signatures_id_ranked.append([signature_id_list[j // len(signature_id_list)],
+                                                      signature_id_list[j % len(signature_id_list)]])
+    return list_pair_signatures_id_ranked
+
+
+def count_synergy_pair_in_top50(list_syn_pair_sign_id, df_cosine_dist_matrix):
+    number_syn_pair_in_top50 = 0
+    list_pair_signatures_id_ranked = rank_pair_based_syn_score(df_cosine_dist_matrix)
+    for pair in list_pair_signatures_id_ranked[:50]:
+        if pair in list_syn_pair_sign_id:
+            number_syn_pair_in_top50 += 1
+    return number_syn_pair_in_top50
 
 
 def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
@@ -233,6 +259,7 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
     dict_statistics['mean ' + name_set_two] = mean(set_two)
     dict_statistics['difference of averagу'] = mean(set_two) - mean(set_one)
     return dict_statistics
+
 
 if __name__ == '__main__':
     parser = createParser()
