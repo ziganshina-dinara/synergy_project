@@ -145,9 +145,7 @@ def create_signature_list(out_from_file_with_signatures, path_to_file_with_terms
                 signature.set_up_terms()
                 signature.set_down_terms()
                 signature_list.append(signature)
-                print('up_terms', signature.up_terms)
-                print('down_terms', signature.down_terms)
-                print('time_enrich:', time.time() -start)
+
 
                 file.write(signature_up_list[0] + '\t' + 'up_terms\t' + '\t'.join(signature.up_terms) + '\n')
                 file.write(signature_down_list[0] + '\t' + 'down_terms\t' + '\t'.join(signature.down_terms) + '\n')
@@ -206,7 +204,7 @@ def cosine_distance(query_genes, pair_genes, list_inf_score):
             first_part_of_vector_pair[i] = 1
     # join the first part of vector, corresponding to space of query genes and second part of vector, corresponding space of genes, that are in pair signature, but not in query signature
     vector_pair = np.hstack((first_part_of_vector_pair, np.ones(len(list_genes_in_pair_not_in_query))))
-    cosine_distance = cosine(vector_pair, vector_query, vector_weights)
+    cosine_distance = 1 - cosine(vector_pair, vector_query, vector_weights)
     return cosine_distance
 
 
@@ -257,22 +255,53 @@ def find_tanimoto_coeff(pair, query_signature):
     return mean_tanimoto_coeff
 
 
+def find_intersection_entire_pair_query_for_up_or_down(sign_1_terms, sign_2_terms, query_signature_terms):
+    intersection_sign_1 = set(sign_1_terms) & set(query_signature_terms)
+    intersection_sign_2 = set(sign_2_terms) & set(query_signature_terms)
+    intersection = intersection_sign_1 & intersection_sign_2
+    return len(intersection)
+
+"""
+def find_intersection_entire_pair_query(sign_1, sign_2, query_signature):
+    number_intersection_down = find_intersection_entire_pair_query_for_up_or_down(sign_1.down_terms, sign_2.down_terms, query_signature.up_terms)
+    number_intersection_up = find_intersection_entire_pair_query_for_up_or_down(sign_1.up_terms, sign_2.up_terms, query_signature.down_terms)
+    return (number_intersection_down + number_intersection_up) / 2
+"""
+
+def find_intersection_entire_pair_for_up_or_down(sign_1_terms, sign_2_terms):
+    intersection = set(sign_1_terms) & set(sign_2_terms)
+    return len(intersection)
+
+"""
+def find_intersection_entire_pair(sign_1, sign_2):
+    number_intersection_down = find_intersection_entire_pair_for_up_or_down(sign_1.down_terms, sign_2.down_terms)
+    number_intersection_up = find_intersection_entire_pair_for_up_or_down(sign_1.up_terms, sign_2.up_terms)
+    return (number_intersection_down + number_intersection_up) / 2
+"""
+def calculate_mutual_info_score(sign_1_terms, sign_2_terms, query_signature_terms):
+    intersection_sign_1 = set(sign_1_terms) & set(query_signature_terms)
+    intersection_sign_2 = set(sign_2_terms) & set(query_signature_terms)
+    if (len(intersection_sign_1) != 0) & (len(intersection_sign_2) != 0):
+        min_length = min(len(intersection_sign_1), len(intersection_sign_2))
+        intersection = set(intersection_sign_1) & set(intersection_sign_2)
+        intersection_sign_1_same_length = list(intersection)[:] + list(intersection_sign_1 - intersection)[:min_length - len(intersection)]
+        intersection_sign_2_same_length = list(intersection)[:] + list(intersection_sign_2 - intersection)[:min_length - len(intersection)]
+        mutual_info_score_value = mutual_info_score(intersection_sign_1_same_length, intersection_sign_2_same_length)
+    else:
+        mutual_info_score_value = np.nan
+    return mutual_info_score_value
+
 def find_mutual_info_score(sign_1, sign_2, query_signature):
-    intersection_sign_1_up_terms = list(set(sign_1.up_terms) & set(query_signature.down_terms))
-    print('intersection_sign_1_up_terms', len(intersection_sign_1_up_terms), intersection_sign_1_up_terms)
-    intersection_sign_2_up_terms = list(set(sign_2.up_terms) & set(query_signature.down_terms))
-    print('intersection_sign_2_up_terms', len(intersection_sign_2_up_terms), intersection_sign_2_up_terms)
-    mutual_info_score_up = mutual_info_score(intersection_sign_1_up_terms, intersection_sign_2_up_terms)
-    print(mutual_info_score_up)
-
-    intersection_sign_1_down_terms = list(set(sign_1.down_terms) & set(query_signature.up_terms))
-    print('intersection_sign_1_down_terms', len(intersection_sign_1_down_terms), intersection_sign_1_down_terms)
-    intersection_sign_2_down_terms = list(set(sign_2.down_terms) & set(query_signature.up_terms))
-    print('intersection_sign_2_down_terms', len(intersection_sign_2_down_terms), intersection_sign_2_down_terms)
-    mutual_info_score_down = mutual_info_score(intersection_sign_1_down_terms, intersection_sign_2_down_terms)
-    print(mutual_info_score_down)
-
-    mean_mutual_info_score = (mutual_info_score_up + mutual_info_score_down) /2
+    mutual_info_score_down = calculate_mutual_info_score(sign_1.down_terms, sign_2.down_terms, query_signature.up_terms)
+    mutual_info_score_up = calculate_mutual_info_score(sign_1.up_terms, sign_2.up_terms, query_signature.down_terms)
+    if (not np.isnan(mutual_info_score_up)) & (not np.isnan(mutual_info_score_down)):
+        mean_mutual_info_score = (mutual_info_score_up + mutual_info_score_down) / 2
+    elif (not np.isnan(mutual_info_score_up)) & (np.isnan(mutual_info_score_down)):
+        mean_mutual_info_score = mutual_info_score_up
+    elif (np.isnan(mutual_info_score_up)) & (not np.isnan(mutual_info_score_down)):
+        mean_mutual_info_score = mutual_info_score_down
+    else :
+        mean_mutual_info_score = np.nan
     return mean_mutual_info_score
 
 
@@ -311,6 +340,12 @@ def compare_multiprocessing(i, j, query_signature, list_inf_score_up, list_inf_s
     if 'mutual_info_coeff' in list_metrics:
         mutual_info_coeff = find_mutual_info_score(signature_list[i], signature_list[j], query_signature)
         return_list.append(('mutual_info_coeff', mutual_info_coeff))
+    if 'intersection_terms_of_pair_query' in list_metrics:
+        intersection_entire_pair_query = find_intersection_entire_pair_query(signature_list[i], signature_list[j], query_signature)
+        return_list.append(('intersection_terms_of_pair_query', intersection_entire_pair_query))
+    if 'intersection_terms_of_pair' in list_metrics:
+        intersection_entire_pair = find_intersection_entire_pair(signature_list[i], signature_list[j])
+        return_list.append(('intersection_terms_of_pair', intersection_entire_pair))
     #print('косинусное расстояние :', find_cosine_dist(pair, query_signature, list_inf_score_up, list_inf_score_down))
     #print('время работы поиска косинусного расстояния для одной пары:',     '--- %s seconds ---' % (time.time() - start_time))
     return tuple(return_list)
@@ -358,28 +393,14 @@ def find_similarity(content_of_file_with_signatures, df_inf_score, number_proces
     print("создали сигнатуру запроса")
     signature_list = create_signature_list(content_of_file_with_signatures, path_to_file_with_terms, presence_file_with_terms)
     signature_id_list = [signature.id for signature in signature_list]
+
     dict_metics_matrix = {}
-
-    if 'cosine_dist' in list_metrics:
+    for name in list_metrics:
         zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
-        cosine_dist_matrix = pd.DataFrame(zeros_array)
-        cosine_dist_matrix.index = signature_id_list
-        cosine_dist_matrix.columns = signature_id_list
-        dict_metics_matrix['cosine_dist'] = cosine_dist_matrix
-
-    if 'tanimoto_coeff' in list_metrics:
-        zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
-        tanimoto_matrix = pd.DataFrame(zeros_array)
-        tanimoto_matrix.index = signature_id_list
-        tanimoto_matrix.columns = signature_id_list
-        dict_metics_matrix['tanimoto_coeff'] = tanimoto_matrix
-
-    if 'mutual_info_coeff' in list_metrics:
-        zeros_array = np.ones(shape=(len(signature_list), len(signature_list)))
-        mutual_info_matrix = pd.DataFrame(zeros_array)
-        mutual_info_matrix.index = signature_id_list
-        mutual_info_matrix.columns = signature_id_list
-        dict_metics_matrix['mutual_info_coeff'] = mutual_info_matrix
+        matrix = pd.DataFrame(zeros_array)
+        matrix.index = signature_id_list
+        matrix.columns = signature_id_list
+        dict_metics_matrix[name] = matrix
 
     list_metric_name_with_matrix = []
     print("приступаем к распараллеливанию")

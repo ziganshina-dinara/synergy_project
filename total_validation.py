@@ -7,9 +7,11 @@ from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, m
 from PPI_v1 import create_df_gene_logFC_topo_score_from_beginning, calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
 from CMap_dict import find_similarity, find_near_signatures
 import pandas as pd
-from validation import split_signatures, split_by_synergy, statistic_analys_results, draw, count_synergy_pair_in_top50
+import numpy as np
+from validation import split_signatures, split_by_synergy, statistic_analys_results, draw, count_synergy_pair_in_top50, count_synergy_pair_in_top_5percent, count_pairs, rank_pair_based_syn_score, calculate_PSEA_metric
 from search_signatures_by_id import create_list_needed_signatures
 from create_list_dict_parameters import create_list_additive_multiplication_dicts
+from PSEA import psea_metric
 
 def createParser ():
     parser = argparse.ArgumentParser()
@@ -72,43 +74,45 @@ if __name__ == '__main__':
     start = time.time()
     if namespace.presence_file_with_list_pair_signature_id == 'no':
         print('Приступили к разделению id сигнатур')
-        syn_sign_id, not_syn_sign_id, all_sign_id = split_signatures(' '.join(namespace.source_type_cell.split('_')),
+        all_sign_id, df_sign_id_pairs_with_labels = split_signatures(' '.join(namespace.source_type_cell.split('_')),
                                                                      ' '.join(namespace.target_type_cell.split('_')),
                                                                      data_intersect_CFM_L1000FWD, data_Drugs_metadata,
                                                                      data_CD_signature_metadata, namespace.number_processes)
         print('Разделили id сигнатур за :', time.time() - start)
-        with open(path_to_folder_results + '/' + 'list_signature_id_syn_'
-                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'w') as file:
-            json.dump(syn_sign_id, file)
-        with open(path_to_folder_results + '/' + 'list_signature_id_not_syn_' +
-                  namespace.source_type_cell + '_' + namespace.target_type_cell + '.json', 'w') as file:
-            json.dump(not_syn_sign_id, file)
+        df_sign_id_pairs_with_labels.to_csv(path_to_folder_results + '/' + 'df_pair_with_class_labels_'
+                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv')
+        with open(
+                path_to_folder_results + '/list_signature_id_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
+                "w") as file:
+            file.write('\n'.join(all_sign_id))
+
+
     else:
-        with open(path_to_folder_results + '/' + 'list_signature_id_syn_'
-                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json',
-                'r') as file:
-            syn_sign_id = json.load(file)
-        print('число синергетических пар:', len(syn_sign_id))
-        with open(path_to_folder_results + '/' + 'list_signature_id_not_syn_' +
-                  namespace.source_type_cell + '_' + namespace.target_type_cell + '.json',
-                'r') as file:
-            not_syn_sign_id = json.load(file)
+        df_sign_id_pairs_with_labels = pd.read_csv(path_to_folder_results + '/' + 'df_pair_with_class_labels_'
+                  + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
+
+        with open(
+                path_to_folder_results + '/list_signature_id_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
+                "r") as file:
+            all_sign_id = file.read().split('\n')
 
     #creating list of signatures
     if namespace.presence_file_with_required_signatures == 'no':
-        print('number of synergy signatures :', len(syn_sign_id), 'number of not synergy signatures :', len(not_syn_sign_id), 'number of all signatures :', len(all_sign_id))
+
         with open(path_to_folder_results + '/list_signature_id_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") as file:
             file.write('\n'.join(all_sign_id))
 
         list_needed_signatures = create_list_needed_signatures(file_with_signatures_42809, all_sign_id)
+        list_needed_signatures = '\n'.join(list_needed_signatures)
         with open(path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") as file:
-            file.write('\n'.join(list_needed_signatures))
+            file.write(list_needed_signatures)
     else:
         with open(path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
             list_needed_signatures = file.read()
 
 
-    # creating list of signatures
+    print('number of synergy signatures :', len([df_sign_id_pairs_with_labels['class_label'] == 1]), 'number of not synergy signatures :',
+          len([df_sign_id_pairs_with_labels['class_label'] == 0]), 'number of all signatures :', len(all_sign_id))
 
     #big step of calculating topological scores
     path_to_file_with_DE = path_to_folder_results + '/DE_edgeR_c_' + namespace.target_type_cell + '_' + namespace.source_type_cell + '.txt'
@@ -123,7 +127,6 @@ if __name__ == '__main__':
                     "w") as file:
                 file.write('\n'.join(up))
             print('время работы создания сигнатуры')
-            print(up)
             with open(path_to_folder_results + '/list_genes_in_string_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") \
                     as file:
                 file.write('\n'.join(down))
@@ -133,7 +136,6 @@ if __name__ == '__main__':
 
             with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
                 up = file.read().split("\n")
-            print(up)
             with open(path_to_folder_results + '/list_genes_in_string_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
                 down = file.read().split("\n")
         # make signature
@@ -173,7 +175,7 @@ if __name__ == '__main__':
             namespace.upper_bound_multiplication_factor_values,
             list_metric, namespace.source_type_cell, namespace.target_type_cell, path_to_folder_results)
     else:
-        with open('DATA/dict_multiplication_optimal_factor.json', 'r') as file:
+        with open('DATA/dict_multiplication_optimal_factor_correct.json', 'r') as file:
             dict_multiplication_optimal_factor = json.load(file)
         list_dict_multiplication_factor = [dict_multiplication_optimal_factor]
         dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1,
@@ -191,7 +193,7 @@ if __name__ == '__main__':
         # calculate influence score
         df_inf_score = calculate_inf_score(df_topo, func_inf_score_v1, dict_multiplication_factor,
                                            dict_additive_factor)
-        print('начали считать косинусные расстояния')
+        print('начали считать синергетические скоры')
         start_time = time.time()
 
 
@@ -214,15 +216,41 @@ if __name__ == '__main__':
                 namespace.target_type_cell +  '.csv', columns=matrix.columns, index=True)
 
             # see results
-            syn_split, not_syn_split = split_by_synergy( matrix, syn_sign_id, not_syn_sign_id)
-            print(len(syn_split), len(not_syn_split))
+            print('делим посчитанные скоры на 2 выборки: синерг и несинерг')
+
+            syn_split, not_syn_split, df_sign_id_pairs_with_labels_scores = split_by_synergy(df_sign_id_pairs_with_labels, matrix, metric_name)
+            print('syn:', len(syn_split), syn_split[:10])
+            print('not syn:', len(not_syn_split), not_syn_split[:10])
+            syn_split = [i for i in syn_split if not np.isnan(i)]
+            not_syn_split = [i for i in not_syn_split if not np.isnan(i)]
+            print('removed nan')
+            print('syn:', len(syn_split), syn_split[:10])
+            print('not syn:', len(not_syn_split), not_syn_split[:10])
+            #print(len(syn_split), len(not_syn_split))
+            print('считаем статистику')
             d = statistic_analys_results(syn_split, not_syn_split, 'synergy', 'not synergy')
             d['dict_additive_factor'] = dict_additive_factor
             d['dict_multiplication_factor'] = dict_multiplication_factor
-            d['count_synergy_pair_in_top50'] = count_synergy_pair_in_top50(syn_sign_id, matrix)
+            dict_ascending_value = {'cosine_dist': False,  'tanimoto_coeff': False, 'mutual_info_coeff': False, 'intersection_terms_of_pair_query': False, 'intersection_terms_of_pair': False}
+            print('сортируем датафрейм')
+            df_sign_id_pairs_with_labels_scores_sorted = rank_pair_based_syn_score(df_sign_id_pairs_with_labels_scores, metric_name, dict_ascending_value[metric_name])
+            df_sign_id_pairs_with_labels_scores_sorted.to_csv(path_to_folder_results_single_parameters + '/df_pairs_with_class_labels_' + metric_name + '_' + namespace.source_type_cell + '_' +\
+                                                              namespace.target_type_cell + '.csv')
+            print('смотрим на топы')
+            d['count_synergy_pair_in_top50'] = count_synergy_pair_in_top50(df_sign_id_pairs_with_labels_scores_sorted)
+            d['number_pairs'] = count_pairs(df_sign_id_pairs_with_labels_scores_sorted)
+            number_syn_pair_in_top_5percent, len_list_pair_signatures_5_percent, fraction_syn_pairs = count_synergy_pair_in_top_5percent(
+                df_sign_id_pairs_with_labels_scores_sorted)
+            d['count_synergy_pair_in_top_5_percent'] = number_syn_pair_in_top_5percent
+            d['number_pairs_in_top_5_percent'] = len_list_pair_signatures_5_percent
+            d['fraction_synergy_pair_in_top_5_percent'] = fraction_syn_pairs
+            dict_res = calculate_PSEA_metric(df_sign_id_pairs_with_labels_scores_sorted, metric_name, path_to_folder_results_single_parameters + '/dict_results_PSEA_' + \
+                                      metric_name + '_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.json')
+            d['PSEA'] = dict_res['syn_pair']['NES']
+
             draw(syn_split, not_syn_split, path_to_folder_results_single_parameters + '/fig_' + metric_name + '_' + namespace.source_type_cell + '_' + \
                  namespace.target_type_cell +'.png' )
-            with open(path_to_folder_results_single_parameters + '/dict_results_' + metric_name + '_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' +\
+            with open(path_to_folder_results_single_parameters + '/dict_results_' + metric_name + '_' + namespace.source_type_cell + '_' + namespace.target_type_cell +\
                                                      '.json', "w") as write_file:
                 json.dump(d, write_file)
 

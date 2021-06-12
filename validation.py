@@ -3,7 +3,6 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, rankdata
-print('stats')
 import json
 import sys
 import argparse
@@ -11,6 +10,9 @@ from statistics import mean
 import time
 from multiprocessing import Pool
 import math
+import rpy2.robjects as robjects
+r = robjects.r
+from rpy2.robjects import StrVector, FloatVector
 
 #setting the expected parameters
 def createParser ():
@@ -34,7 +36,7 @@ def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_sign
     data_intersect_CFM_L1000FWD['pert_id of chemicals in L1000FWD'] = str()
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
         if data_intersect_CFM_L1000FWD.iloc[i, 8] != 'not molecules':
-            for cid in data_intersect_CFM_L1000FWD.iloc[i, 8].split(';'):
+            for cid in str(data_intersect_CFM_L1000FWD.iloc[i, 8]).split(';'):
                 if data_intersect_CFM_L1000FWD.iloc[i, 9] == str():
                     data_intersect_CFM_L1000FWD.iloc[i, 9] = ';'.join(list(data_Drugs_metadata[data_Drugs_metadata['pubchem_cid'] == cid].index))
                 else:
@@ -65,7 +67,9 @@ def select_pair_sign_id_from_same_protocol(number_protocol, data_intersect_CFM_L
     list_sign_id_in_same_protocol = list(set(list_sign_id_in_same_protocol))
     for i in range(len(list_sign_id_in_same_protocol) - 1):
         for j in range(i + 1, len(list_sign_id_in_same_protocol)):
-                pair_sign_id_from_same_protocol.append((list_sign_id_in_same_protocol[i], list_sign_id_in_same_protocol[j]))
+            list_pair = [list_sign_id_in_same_protocol[i], list_sign_id_in_same_protocol[j]]
+            list_pair.sort()
+            pair_sign_id_from_same_protocol.append(tuple(list_pair))
     return pair_sign_id_from_same_protocol
 
 
@@ -82,7 +86,7 @@ def select_pair_sign_id_from_different_protocol(first_number_protocol, second_nu
 
 
 def select_sign_id_from_protocol(number_protocol, data_intersect_CFM_L1000FWD):
-    list_sign_id = list(set(data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].split(';')))
+    list_sign_id = list(set(data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].strip().split(';')))
     return list_sign_id
 
 
@@ -97,28 +101,7 @@ def select_sign_id(data_intersect_CFM_L1000FWD, number_processes):
         list_syn_pair_sign_id += sub_list_pair_sign_id
     print('all length', len(list_syn_pair_sign_id))
     list_syn_pair_sign_id = list(set(list_syn_pair_sign_id))
-    for pair in list_syn_pair_sign_id:
-        if (pair[1], pair[0]) in list_syn_pair_sign_id:
-            list_syn_pair_sign_id.remove((pair[1], pair[0]))
     print('all length after remove', len(list_syn_pair_sign_id))
-
-    # select all not synegy pair of signature ids
-    with Pool(processes=number_processes) as pool:
-        results = pool.starmap(select_pair_sign_id_from_different_protocol,
-                               [(i, j, data_intersect_CFM_L1000FWD, list_syn_pair_sign_id) for i in
-                                range(data_intersect_CFM_L1000FWD.shape[0]) for j in
-                                range(data_intersect_CFM_L1000FWD.shape[0]) if i < j])
-    list_not_syn_pair_sign_id = []
-    for sub_list_pair_sign_id in results:
-        print(len(sub_list_pair_sign_id))
-        list_not_syn_pair_sign_id += sub_list_pair_sign_id
-    print('all length', len(list_not_syn_pair_sign_id))
-
-    list_not_syn_pair_sign_id = list(set(list_not_syn_pair_sign_id))
-    for pair in list_not_syn_pair_sign_id:
-        if ((pair[1], pair[0]) in list_not_syn_pair_sign_id):
-            list_not_syn_pair_sign_id.remove((pair[1], pair[0]))
-    print('all length after remove', len(list_not_syn_pair_sign_id))
 
     # select all signature ids
     with Pool(processes=number_processes) as pool:
@@ -126,41 +109,59 @@ def select_sign_id(data_intersect_CFM_L1000FWD, number_processes):
                                [(i, data_intersect_CFM_L1000FWD) for i in range(data_intersect_CFM_L1000FWD.shape[0])])
     list_sign_id = []
     for sub_list_sign_id in results:
-        print(len(sub_list_sign_id))
         list_sign_id += sub_list_sign_id
-    print(len(list_sign_id))
     list_sign_id = list(set(list_sign_id))
+    if str() in list_sign_id:
+        list_sign_id.remove(str())
     print('all length all sign id', len(list_sign_id))
 
-    return (list_syn_pair_sign_id, list_not_syn_pair_sign_id, list_sign_id)
-
-
-def split_by_synergy(df_cosine_dist_matrix, list_synergy_pair, list_not_synergy_pair):
-    list_cos_dist_synergy_pair = []
-    for pair in list_synergy_pair:
-        if (pair[0] in list(df_cosine_dist_matrix.index)) and (pair[1] in list(df_cosine_dist_matrix.index)):
-            if list(df_cosine_dist_matrix.index).index(pair[0]) < list(df_cosine_dist_matrix.index).index(pair[1]):
-                list_cos_dist_synergy_pair.append(df_cosine_dist_matrix.loc[pair[0], pair[1]])
+    d = {}
+    d['sign_id_1'] = []
+    d['sign_id_2'] = []
+    d['class_label'] = []
+    list_not_syn_pair_sign_id = []
+    for i in range(len(list_sign_id)):
+        for j in range(i):
+            list_pair = [list_sign_id[i], list_sign_id[j]]
+            list_pair.sort()
+            list_pair = tuple(list_pair)
+            d['sign_id_1'].append(list_pair[0])
+            d['sign_id_2'].append(list_pair[1])
+            if list_pair in list_syn_pair_sign_id:
+                d['class_label'].append(1)
             else:
-                list_cos_dist_synergy_pair.append(df_cosine_dist_matrix.loc[pair[1], pair[0]])
+                d['class_label'].append(0)
+                list_not_syn_pair_sign_id.append(list_pair)
+    df = pd.DataFrame(d)
 
-    list_cos_dist_not_synergy_pair = []
-    q = 0
-    for pair in list_not_synergy_pair:
-        q += 1
-        if (pair[0] in list(df_cosine_dist_matrix.index)) and (pair[1] in list(df_cosine_dist_matrix.index)):
-            if list(df_cosine_dist_matrix.index).index(pair[0]) < list(df_cosine_dist_matrix.index).index(pair[1]):
-                list_cos_dist_not_synergy_pair.append(df_cosine_dist_matrix.loc[pair[0], pair[1]])
-            else:
-                list_cos_dist_not_synergy_pair.append(df_cosine_dist_matrix.loc[pair[1], pair[0]])
-    return (list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair)
+    return (list_sign_id, df)
+
+
+def split_by_synergy(df_sign_id_pairs_with_labels, df_matrix, name_metric):
+    list_score_synergy_pair = []
+    list_score_not_synergy_pair = []
+    df_sign_id_pairs_with_labels_metric = df_sign_id_pairs_with_labels.copy()
+    df_sign_id_pairs_with_labels_metric[name_metric] = np.nan
+    for i in range(df_sign_id_pairs_with_labels_metric.shape[0]):
+        if list(df_matrix.index).index(df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1']) < list(df_matrix.index).index(df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']):
+            df_sign_id_pairs_with_labels_metric.loc[i, name_metric] = df_matrix.loc[df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1'], df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']]
+        else:
+            df_sign_id_pairs_with_labels_metric.loc[i, name_metric] = df_matrix.loc[
+                df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2'], df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1']]
+
+        if df_sign_id_pairs_with_labels_metric.loc[i, 'class_label'] == 1:
+            list_score_synergy_pair.append(df_sign_id_pairs_with_labels_metric.loc[i, name_metric])
+        else:
+            list_score_not_synergy_pair.append(df_sign_id_pairs_with_labels_metric.loc[i, name_metric])
+
+    return (list_score_synergy_pair, list_score_not_synergy_pair, df_sign_id_pairs_with_labels_metric)
 
 
 def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_figure):
     plt.figure(figsize=(15, 10))
-    snsplot = sns.distplot(list_cos_dist_synergy_pair, color = 'green', label = 'synergy')
-    snsplot = sns.distplot(list_cos_dist_not_synergy_pair, color = 'b', label = 'not synergy')
-    snsplot.legend()
+    snsplot = sns.distplot(list_cos_dist_not_synergy_pair, hist=True, kde=False, color='b', label='not synergy')
+    snsplot = sns.distplot(list_cos_dist_synergy_pair, hist=True, kde=False, color = 'green', label = 'synergy')
+    plt.legend()
     snsplot.set_xlabel('score')
     plt.show()
     fig = snsplot.get_figure()
@@ -181,35 +182,64 @@ def number_sign_in_protocol(data_intersect_CFM_L1000FWD):
 def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata, number_processes):
     data = modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata)
     data = filter(str_source_type_cell, str_target_type_cell, data)
-    print(number_sign_in_protocol(data))
-    syn, not_syn, all_s = select_sign_id(data, number_processes)
-    return (syn, not_syn, all_s)
+    all_s, df_sign_id_pairs_with_labels_scores = select_sign_id(data, number_processes)
+    return (all_s, df_sign_id_pairs_with_labels_scores)
 
 
-def rank_pair_based_syn_score(df_cosine_dist_matrix):
-    signature_id_list = list(df_cosine_dist_matrix.index)
-    list_pair_signatures_id_ranked = []
-    n = df_cosine_dist_matrix.shape[0]
-    rank_array = rankdata(df_cosine_dist_matrix, method='dense')
-    for i in range(np.min(rank_array), np.min(rank_array) + n, 1):
-        for j in range(len(rank_array)):
-            if rank_array[j] == i:
-                list_pair_signatures_id_ranked.append([signature_id_list[j // len(signature_id_list)],
-                                                      signature_id_list[j % len(signature_id_list)]])
-    return list_pair_signatures_id_ranked
+def rank_pair_based_syn_score(df_sign_id_pairs_with_labels_scores, metric_name, ascending_type):
+    df_sign_id_pairs_with_labels_scores = df_sign_id_pairs_with_labels_scores.sort_values(by=metric_name, ascending=ascending_type)
+    df_sign_id_pairs_with_labels_scores = df_sign_id_pairs_with_labels_scores.reset_index()
+    return df_sign_id_pairs_with_labels_scores
 
 
-def count_synergy_pair_in_top50(list_syn_pair_sign_id, df_cosine_dist_matrix):
-    number_syn_pair_in_top50 = 0
-    list_pair_signatures_id_ranked = rank_pair_based_syn_score(df_cosine_dist_matrix)
-    for pair in list_pair_signatures_id_ranked[:50]:
-        if pair in list_syn_pair_sign_id:
-            number_syn_pair_in_top50 += 1
-    return number_syn_pair_in_top50
+def count_synergy_pair_in_top50(df_sign_id_pairs_with_labels_scores_sorted):
+    return sum(df_sign_id_pairs_with_labels_scores_sorted.loc[:49, 'class_label'])
+
+
+def count_synergy_pair_in_top_5percent(df_sign_id_pairs_with_labels_scores_sorted):
+    len_list_pair_signatures_5_percent = round(len(df_sign_id_pairs_with_labels_scores_sorted) * 0.05)
+    number_syn_pair_in_top_5percent = sum(df_sign_id_pairs_with_labels_scores_sorted.loc[:len_list_pair_signatures_5_percent-1, 'class_label'])
+    return (number_syn_pair_in_top_5percent, len_list_pair_signatures_5_percent,
+            number_syn_pair_in_top_5percent / len_list_pair_signatures_5_percent)
+
+
+def count_pairs(df_sign_id_pairs_with_labels_scores):
+    return df_sign_id_pairs_with_labels_scores.shape[0]
+
+def calculate_PSEA_metric(df, metric_name, path):
+
+    df['score_for_fgsea'] = df[metric_name] - df[metric_name].mean()
+    syn_pair_number_list = list(df[df['class_label'] == 1].index)
+    syn_pair_number_list = [str(x + 1) for x in syn_pair_number_list]  # сдвиг  для индексации в R
+    not_syn_pair_number_list = list(df[df['class_label'] == 0].index)
+    not_syn_pair_number_list = [str(x + 1) for x in not_syn_pair_number_list]
+    list_rank = list(df['score_for_fgsea'])
+    r['source']('PSEA.R')
+    function_r = robjects.globalenv['metric_PSEA']
+    res = function_r(StrVector(syn_pair_number_list), StrVector(not_syn_pair_number_list),
+                     FloatVector(list_rank))
+    dict_res = {}
+    dict_res['syn_pair'] = {}
+    for el in res[1:4]:
+        if type(el.split('_')[1]) == str:
+            dict_res['syn_pair'][el.split('_')[0]] = el.split('_')[1]
+        else:
+            dict_res['syn_pair'][el.split('_')[0]] = float(el.split('_')[1])
+
+    dict_res['not_syn_pair'] = {}
+    for el in res[5:]:
+        if type(el.split('_')[1]) == str:
+            dict_res['not_syn_pair'][el.split('_')[0]] = el.split('_')[1]
+        else:
+            dict_res['not_syn_pair'][el.split('_')[0]] = float(el.split('_')[1])
+    if path:
+        with open(path, 'w') as file:
+            json.dump(dict_res, file)
+    return dict_res
+
 
 
 def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
-    print(len(set_one), len(set_two))
     if len(set_one) > len(set_two) :
         set_big = set_one
         set_small = set_two
@@ -228,7 +258,6 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
             set_big_split = set_big_split + set_big[0: (len(set_small) - len(set_big_split))]
         (stat, p_value) = ks_2samp(set_big_split, set_small)
         p = np.float64(ks_2samp(set_big_split, set_small)[1])
-        print(p)
         #print(ks_2samp(set_big_split, set_small)[1])
         #print(math.log(ks_2samp(set_big_split, set_small)[1]))
 
@@ -239,7 +268,6 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
         #log_10_p_value_list[i] = log_10_p_value
         stat_list.append(stat)
         p_list.append(p)
-    print(p_list)
     #print(log_p_value_list)
     #print(log_10_p_value_list)
 
@@ -257,7 +285,7 @@ def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
     #dict_statistics['log_10 pvalue values'] = log_10_p_value_list
     dict_statistics['mean ' + name_set_one] = mean(set_one)
     dict_statistics['mean ' + name_set_two] = mean(set_two)
-    dict_statistics['difference of averagу'] = mean(set_two) - mean(set_one)
+    dict_statistics['difference of averagу'] = mean(set_one) - mean(set_two)
     return dict_statistics
 
 
