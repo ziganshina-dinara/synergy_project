@@ -24,25 +24,26 @@ def make_signature_from_DE(file, logFC=1, pvalue=0.01):
                             set lower threshold for logFC, pvalue less than threshold for pvalue
     Each list of genes is sorted decrease of the modulo the logarithm of the fold change and sorted by increasing pvalue.
     """
-    Dif_exp = pd.read_table(file, sep='\t')
-
-    if ('logFC' in Dif_exp.columns.tolist()) & ('PValue' in Dif_exp.columns.tolist()):  # названия столбцов 'logFC', PValue' характерны для edgeR
+    Dif_exp = pd.read_table(file, sep=' ')
+    # названия столбцов 'logFC', PValue' характерны для edgeR
+    if ('logFC' in Dif_exp.columns.tolist()) & ('PValue' in Dif_exp.columns.tolist()):
         Dif_exp_up = Dif_exp[(Dif_exp['logFC'] > logFC) & (Dif_exp['PValue'] < pvalue)]
         Dif_exp_up = Dif_exp_up.sort_values(by=['logFC', 'PValue'], ascending=[False, True])
         Dif_exp_down = Dif_exp[(Dif_exp['logFC'] < - logFC) & (Dif_exp['PValue'] < pvalue)]
         Dif_exp_down = Dif_exp_down.sort_values(by=['logFC', 'PValue'], ascending=[True, True])
         Dif_exp_up_genes = Dif_exp_up['logFC']
         Dif_exp_down_genes = Dif_exp_down['logFC']
-    elif ('log2FoldChange' in Dif_exp.columns.tolist()) & ('pvalue' in Dif_exp.columns.tolist()):  # названия столбцов 'log2FoldChange', 'pvalue' характерны для DESeq2
+
+    # названия столбцов 'log2FoldChange', 'pvalue' характерны для DESeq2
+    elif ('log2FoldChange' in Dif_exp.columns.tolist()) & ('pvalue' in Dif_exp.columns.tolist()):
         Dif_exp_up = Dif_exp[(Dif_exp['log2FoldChange'] > logFC) & (Dif_exp['pvalue'] < pvalue)]
         Dif_exp_up = Dif_exp_up.sort_values(by=['log2FoldChange', 'pvalue'], ascending=[False, True])
         Dif_exp_down = Dif_exp[(Dif_exp['log2FoldChange'] < - logFC) & (Dif_exp['pvalue'] < pvalue)]
         Dif_exp_down = Dif_exp_down.sort_values(by=['log2FoldChange', 'pvalue'], ascending=[True, True])
         Dif_exp_up_genes = Dif_exp_up['log2FoldChange']
         Dif_exp_down_genes = Dif_exp_down['log2FoldChange']
-
-
     return (Dif_exp_up_genes, Dif_exp_down_genes)
+
 
 def get_list_protein_in_STRING(gene_set, number=2000, species=9606):
     """
@@ -73,8 +74,10 @@ def get_list_protein_in_STRING(gene_set, number=2000, species=9606):
     list_proteins_not_in_STRING = []
     i = 0
     number_proteins_in_STRING = 0
+    print('len', len(gene_set))
     while (number_proteins_in_STRING < number):
         gene = gene_set[i]
+        print(i, gene)
         i += 1
         params = {
 
@@ -90,6 +93,9 @@ def get_list_protein_in_STRING(gene_set, number=2000, species=9606):
             response.raise_for_status()
             list_proteins_in_STRING.append(gene)
             number_proteins_in_STRING = len(list_proteins_in_STRING)
+            if i == len(gene_set):
+                print('break', i)
+                break
 
         except ConnectionError:
             print('Connection Error')
@@ -145,8 +151,11 @@ def get_signature_for_request_in_STRING(file, logFC=1, pvalue=0.01, number=2000,
     data_up_genes, data_down_genes = make_signature_from_DE(file, logFC, pvalue)
     data_up_genes = list(data_up_genes.index)
     data_down_genes = list(data_down_genes.index)
+    print(len(data_up_genes), data_up_genes[:20])
+    print(len(data_down_genes), data_down_genes[:20])
 
     # select genes whose proteins are in the database STRING
+    print('начали проверку в STRING')
     proteins_up_in_STRING = get_list_protein_in_STRING(data_up_genes, number, species)[0]
     proteins_down_in_STRING = get_list_protein_in_STRING(data_down_genes, number, species)[0]
     return (proteins_up_in_STRING, proteins_down_in_STRING)
@@ -157,7 +166,8 @@ if __name__ == '__main__':
     c помощью edgeR.
     """
     start_time = time.time()
-    data_up_genes, data_down_genes = get_signature_for_request_in_STRING(file = './DATA/DE/DE_edgeR_cheart_fibroblast.txt', logFC=1, pvalue=0.01, number=2000, species=9606)
+    data_up_genes, data_down_genes = get_signature_for_request_in_STRING(file='./DATA/DE/DE_edgeR_cheart_fibroblast.txt',
+                                                                        logFC=1, pvalue=0.01, number=2000, species=9606)
     print("up :", len(data_up_genes))
     print(data_up_genes)
     print("down :", len(data_down_genes))

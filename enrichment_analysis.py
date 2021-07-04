@@ -12,7 +12,7 @@ class Enrich:
     ----------
     gene_list: list
         list of genes with increased or decreased expression
-    threshold : int
+    threshold : float
         p_value threshold
 
     Methods

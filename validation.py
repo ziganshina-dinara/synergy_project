@@ -1,21 +1,29 @@
-import pandas as pd
-import seaborn as sns
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import ks_2samp, rankdata
 import json
 import sys
-import argparse
-from statistics import mean
 import time
-from multiprocessing import Pool
-import math
-import rpy2.robjects as robjects
-r = robjects.r
-from rpy2.robjects import StrVector, FloatVector
+import argparse
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-#setting the expected parameters
+from scipy.stats import ks_2samp
+from statistics import mean
+from multiprocessing import Pool
+import rpy2.robjects as robjects
+from rpy2.robjects import StrVector, FloatVector
+r = robjects.r
+
+
+# setting the expected parameters
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('-source', '--source_type_cell', type=str)
     parser.add_argument('-target', '--target_type_cell', type=str)
@@ -32,7 +40,22 @@ def createParser ():
 
 
 def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata):
-    #для малых молекул из L1000FWD по cid найдем pert_id
+    """
+    Find signatures ids, whose signatures induced small molecules by their cid
+
+    Parameters
+    ---------
+    data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+        DataFrame obtained as result of intersection of CFM database and L1000FWD by small molecules
+    data_Drugs_metadata : pandas.core.frame.DataFrame
+        DataFrame with metadata for small molecules
+    data_CD_signature_metadata : pandas.core.frame.DataFrame
+        DataFrame with metadata for signatures
+    Return
+    ------
+    DataFrame with signatures ids, whose signatures induced small molecules used for conversion in protocols
+    """
+    # для малых молекул из L1000FWD по cid найдем pert_id
     data_intersect_CFM_L1000FWD['pert_id of chemicals in L1000FWD'] = str()
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
         if data_intersect_CFM_L1000FWD.iloc[i, 8] != 'not molecules':
@@ -41,7 +64,8 @@ def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_sign
                     data_intersect_CFM_L1000FWD.iloc[i, 9] = ';'.join(list(data_Drugs_metadata[data_Drugs_metadata['pubchem_cid'] == cid].index))
                 else:
                     data_intersect_CFM_L1000FWD.iloc[i, 9] = data_intersect_CFM_L1000FWD.iloc[i, 9] + ';' +  ';'.join(list(data_Drugs_metadata[data_Drugs_metadata['pubchem_cid'] == cid].index))
-    #для малых молекул из L1000FWD по pert_id найдем sign_id
+
+    # для малых молекул из L1000FWD по pert_id найдем sign_id
     data_intersect_CFM_L1000FWD['sign_id'] = str()
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
         if data_intersect_CFM_L1000FWD.iloc[i, 9] != str():
@@ -53,7 +77,22 @@ def modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_sign
     return data_intersect_CFM_L1000FWD
 
 
-def filter(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD):
+def filter_conversion(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD):
+    """
+    Select protocols for the conversion of interest
+
+    Parameters
+    ---------
+    str_source_type_cell : str
+        source type cell
+    str_target_type_cell : str
+        target type cell
+    data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+        DataFrame with signatures induced small molecules used for conversion
+    Return
+    ------
+    DataFrame with signatures id in protocols for conversion from source type cell to target type cell
+    """
     data_intersect_CFM_L1000FWD = data_intersect_CFM_L1000FWD[(data_intersect_CFM_L1000FWD['Source Cell Type'] == str_source_type_cell)
                                             & (data_intersect_CFM_L1000FWD['Target Cell Type'] == str_target_type_cell)]
     data_intersect_CFM_L1000FWD = data_intersect_CFM_L1000FWD[data_intersect_CFM_L1000FWD['cid of chemicals in L1000FWD'] !=
@@ -62,6 +101,19 @@ def filter(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000F
 
 
 def select_pair_sign_id_from_same_protocol(number_protocol, data_intersect_CFM_L1000FWD):
+    """
+    Select protocols for the conversion of interest
+
+    Parameters
+    ---------
+    number_protocol: int
+        number of the considered protocol
+    data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+        DataFrame with signatures id, whose signatures induced small molecules used for conversion in protocols
+    Return
+    ------
+    list of tuples of pair of small molecules from the protocol, which number is interested
+    """
     pair_sign_id_from_same_protocol = []
     list_sign_id_in_same_protocol = data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].strip().split(';')
     list_sign_id_in_same_protocol = list(set(list_sign_id_in_same_protocol))
@@ -73,6 +125,7 @@ def select_pair_sign_id_from_same_protocol(number_protocol, data_intersect_CFM_L
     return pair_sign_id_from_same_protocol
 
 
+"""
 def select_pair_sign_id_from_different_protocol(first_number_protocol, second_number_protocol, data_intersect_CFM_L1000FWD, list_syn_pair_sign_id):
     list_pair_sign_id_from_different_protocol = []
     list_sign_id_in_first_protocol = list(set(data_intersect_CFM_L1000FWD.iloc[first_number_protocol, 10].split(';')))
@@ -83,14 +136,46 @@ def select_pair_sign_id_from_different_protocol(first_number_protocol, second_nu
                 if (not (sign_id_1, sign_id_2) in list_syn_pair_sign_id) & (not (sign_id_2, sign_id_1) in list_syn_pair_sign_id) & (not (sign_id_1, sign_id_2) in list_pair_sign_id_from_different_protocol) & (not (sign_id_2, sign_id_1) in list_pair_sign_id_from_different_protocol):
                     list_pair_sign_id_from_different_protocol.append((sign_id_1, sign_id_2))
     return list_pair_sign_id_from_different_protocol
+"""
 
 
 def select_sign_id_from_protocol(number_protocol, data_intersect_CFM_L1000FWD):
+    """
+    Select signature ids from protocol
+
+    Parameters
+    ---------
+    number_protocol: int
+        number of the considered protocol
+    data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+        DataFrame with signatures id, whose signatures induced small molecules used for conversion in protocols
+    Return
+    ------
+    list of signature ids from protocol
+    """
     list_sign_id = list(set(data_intersect_CFM_L1000FWD.iloc[number_protocol, 10].strip().split(';')))
     return list_sign_id
 
 
 def select_sign_id(data_intersect_CFM_L1000FWD, number_processes):
+    """
+    Define signature pairs from the same protocol.
+    Creates a list of all signatures and iterates through the pairs among them, determining a synergetic pair if
+    both signatures belong to the same protocol in it, otherwise not synergetic
+
+    Parameters
+    ---------
+    number_processes : int
+        number of processes
+    data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+        DataFrame with signatures id, whose signatures induced small molecules used for conversion in protocols
+    Return
+    ------
+    tuple of list of all signature ids and DataFrame with columns:
+        sign_id_1 (first signature id of pair),
+        sign_id_2 (second signature id of pair),
+        class_label (1 if synergetic pair, 0 otherwise).
+    """
     # select all synegy pair of signature ids
     with Pool(processes=number_processes) as pool:
         results = pool.starmap(select_pair_sign_id_from_same_protocol,
@@ -133,18 +218,45 @@ def select_sign_id(data_intersect_CFM_L1000FWD, number_processes):
                 d['class_label'].append(0)
                 list_not_syn_pair_sign_id.append(list_pair)
     df = pd.DataFrame(d)
-
     return (list_sign_id, df)
 
 
 def split_by_synergy(df_sign_id_pairs_with_labels, df_matrix, name_metric):
+    """
+    Divide the predicted values of the synergy level into 2 samples: for synergistic and non-synergistic pairs
+
+    Parameters
+    ---------
+    df_sign_id_pairs_with_labels : pandas.core.frame.DataFrame
+        DataFrame with columns:
+            sign_id_1 (first signature id of pair)
+            sign_id_2 (second signature id of pair)
+            class_label (1 if synergetic pair, 0 otherwise)
+    df_matrix : numpy.ndarray
+        array with predicted values of synergy score for pair
+    name_metric : str
+        name of metric used for calculation synergy score
+    Return
+    ------
+    tuple of :
+        list of values of synergy score for synergetic pair
+        list of values of synergy score for non-synergetic pair
+        DataFrame with columns:
+            sign_id_1 (first signature id of pair),
+            sign_id_2 (second signature id of pair),
+            class_label (1 if synergetic pair, 0 otherwise)
+            name_metric (values of synergy score, calculated using this metric)
+    """
     list_score_synergy_pair = []
     list_score_not_synergy_pair = []
     df_sign_id_pairs_with_labels_metric = df_sign_id_pairs_with_labels.copy()
     df_sign_id_pairs_with_labels_metric[name_metric] = np.nan
     for i in range(df_sign_id_pairs_with_labels_metric.shape[0]):
-        if list(df_matrix.index).index(df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1']) < list(df_matrix.index).index(df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']):
-            df_sign_id_pairs_with_labels_metric.loc[i, name_metric] = df_matrix.loc[df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1'], df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']]
+        if list(df_matrix.index).index(
+                df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1']) < list(df_matrix.index).index(
+            df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']):
+            df_sign_id_pairs_with_labels_metric.loc[i, name_metric] = df_matrix.loc[df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1'],
+                                                                                    df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2']]
         else:
             df_sign_id_pairs_with_labels_metric.loc[i, name_metric] = df_matrix.loc[
                 df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_2'], df_sign_id_pairs_with_labels_metric.loc[i, 'sign_id_1']]
@@ -158,9 +270,23 @@ def split_by_synergy(df_sign_id_pairs_with_labels, df_matrix, name_metric):
 
 
 def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_figure):
+    """
+        Draw distributions of samples of synergy level values for synergistic and non-synergistic pairs
+
+        Parameters
+        ---------
+        list_cos_dist_synergy_pair : list
+            list of values of synergy score for synergetic pair
+        list_cos_dist_not_synergy_pair : list
+            list of values of synergy score for non-synergetic pair
+        path_to_figure : str
+            path to save figure
+    """
     plt.figure(figsize=(15, 10))
-    snsplot = sns.distplot(list_cos_dist_not_synergy_pair, hist=True, kde=False, color='b', label='not synergy')
-    snsplot = sns.distplot(list_cos_dist_synergy_pair, hist=True, kde=False, color = 'green', label = 'synergy')
+    snsplot = sns.distplot(list_cos_dist_not_synergy_pair, color='b', label='not synergy')
+    snsplot = sns.distplot(list_cos_dist_synergy_pair, color='green', label='synergy')
+    #snsplot = sns.distplot(list_cos_dist_not_synergy_pair, hist=True, kde=False, color='b', label='not synergy')
+    #snsplot = sns.distplot(list_cos_dist_synergy_pair, hist=True, kde=False, color = 'green', label = 'synergy')
     plt.legend()
     snsplot.set_xlabel('score')
     plt.show()
@@ -169,6 +295,18 @@ def draw(list_cos_dist_synergy_pair, list_cos_dist_not_synergy_pair, path_to_fig
 
 
 def number_sign_in_protocol(data_intersect_CFM_L1000FWD):
+    """
+        Count the number of signatures in each protocol
+
+        Parameters
+        ---------
+        data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+            DataFrame with signatures id, whose signatures induced small molecules used for conversion in protocols
+
+        Return
+        ------
+        dict with list of values for the number of signatures in each protocol and the number of all signatures
+    """
     number_sign = []
     list_sign = []
     for i in range(data_intersect_CFM_L1000FWD.shape[0]):
@@ -179,24 +317,110 @@ def number_sign_in_protocol(data_intersect_CFM_L1000FWD):
     return d
 
 
-def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata, number_processes):
+def split_signatures(str_source_type_cell, str_target_type_cell, data_intersect_CFM_L1000FWD, data_Drugs_metadata,
+                     data_CD_signature_metadata, number_processes):
+    """
+        Split pairs of signatures in 2 sample: synergetic pair and non-synergetic pair
+
+        Parameters
+        ---------
+        str_source_type_cell : str
+            source type cell
+        str_target_type_cell : str
+            target type cell
+        data_intersect_CFM_L1000FWD : pandas.core.frame.DataFrame
+            DataFrame with signatures induced small molecules used for conversion
+        data_Drugs_metadata : pandas.core.frame.DataFrame
+            DataFrame with metadata for small molecules
+        data_CD_signature_metadata : pandas.core.frame.DataFrame
+            DataFrame with metadata for signatures
+        number_processes : int
+            number of processes
+
+        Return
+        ------
+        tuple of list of all signature ids and DataFrame with columns:
+        sign_id_1 (first signature id of pair),
+        sign_id_2 (second signature id of pair),
+        class_label (1 if synergetic pair, 0 otherwise).
+    """
     data = modernization(data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata)
-    data = filter(str_source_type_cell, str_target_type_cell, data)
+    data = filter_conversion(str_source_type_cell, str_target_type_cell, data)
     all_s, df_sign_id_pairs_with_labels_scores = select_sign_id(data, number_processes)
     return (all_s, df_sign_id_pairs_with_labels_scores)
 
 
 def rank_pair_based_syn_score(df_sign_id_pairs_with_labels_scores, metric_name, ascending_type):
-    df_sign_id_pairs_with_labels_scores = df_sign_id_pairs_with_labels_scores.sort_values(by=metric_name, ascending=ascending_type)
+    """
+        Rank pairs by the level of synergy
+
+        Parameters
+        ---------
+        df_sign_id_pairs_with_labels_scores : pandas.core.frame.DataFrame
+            DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                name_metric (values of synergy score, calculated using this metric)
+        metric_name : str
+            name of metric used for calculation synergy score
+        ascending_type : bool
+            Sort ascending vs. descending
+
+        Return
+        ------
+        DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                name_metric (values of synergy score, calculated using this metric)
+        DataFrame is sorted by values of synergy score
+    """
+    df_sign_id_pairs_with_labels_scores = df_sign_id_pairs_with_labels_scores.sort_values(by=metric_name,
+                                                                                          ascending=ascending_type)
     df_sign_id_pairs_with_labels_scores = df_sign_id_pairs_with_labels_scores.reset_index()
     return df_sign_id_pairs_with_labels_scores
 
 
 def count_synergy_pair_in_top50(df_sign_id_pairs_with_labels_scores_sorted):
+    """
+        Count the number of synergistic pairs in top50 pairs
+
+        Parameters
+        ---------
+        df_sign_id_pairs_with_labels_scores_sorted : pandas.core.frame.DataFrame
+            DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                name_metric (values of synergy score, calculated using this metric)
+            DataFrame is sorted by values of synergy score
+
+        Return
+        ------
+        number of synergistic pairs in top50 pairs
+    """
     return sum(df_sign_id_pairs_with_labels_scores_sorted.loc[:49, 'class_label'])
 
 
 def count_synergy_pair_in_top_5percent(df_sign_id_pairs_with_labels_scores_sorted):
+    """
+        Count the number of synergistic pairs in top5% pairs
+
+        Parameters
+        ---------
+        df_sign_id_pairs_with_labels_scores_sorted : pandas.core.frame.DataFrame
+            DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                name_metric (values of synergy score, calculated using this metric)
+            DataFrame is sorted by values of synergy score
+
+        Return
+        ------
+        number of synergistic pairs in top5% pairs
+    """
     len_list_pair_signatures_5_percent = round(len(df_sign_id_pairs_with_labels_scores_sorted) * 0.05)
     number_syn_pair_in_top_5percent = sum(df_sign_id_pairs_with_labels_scores_sorted.loc[:len_list_pair_signatures_5_percent-1, 'class_label'])
     return (number_syn_pair_in_top_5percent, len_list_pair_signatures_5_percent,
@@ -204,10 +428,45 @@ def count_synergy_pair_in_top_5percent(df_sign_id_pairs_with_labels_scores_sorte
 
 
 def count_pairs(df_sign_id_pairs_with_labels_scores):
+    """
+        Count the number of pairs of signatures for a conversion
+
+        Parameters
+        ---------
+        df_sign_id_pairs_with_labels_scores : pandas.core.frame.DataFrame
+            DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                (name_metric (values of synergy score, calculated using this metric))
+
+        Return
+        ------
+        number of pairs of signatures for a conversion
+    """
     return df_sign_id_pairs_with_labels_scores.shape[0]
 
 def calculate_PSEA_metric(df, metric_name, path):
+    """
+        Calculate GSEA metric for synergistic and non-synergistic pairs
 
+        Parameters
+        ---------
+        df : pandas.core.frame.DataFrame
+            DataFrame with columns:
+                sign_id_1 (first signature id of pair),
+                sign_id_2 (second signature id of pair),
+                class_label (1 if synergetic pair, 0 otherwise)
+                (name_metric (values of synergy score, calculated using this metric))
+            DataFrame is sorted by values of synergy score
+        metric_name : str
+            name of metric used for calculation synergy score
+        path : str
+            path to save results in dict
+        Return
+        ------
+        dict with results
+    """
     df['score_for_fgsea'] = df[metric_name] - df[metric_name].mean()
     syn_pair_number_list = list(df[df['class_label'] == 1].index)
     syn_pair_number_list = [str(x + 1) for x in syn_pair_number_list]  # сдвиг  для индексации в R
@@ -238,9 +497,27 @@ def calculate_PSEA_metric(df, metric_name, path):
     return dict_res
 
 
-
 def statistic_analys_results(set_one, set_two, name_set_one, name_set_two):
-    if len(set_one) > len(set_two) :
+    """
+        Compare the distributions of samples calculating average statistic, average pvalue, statistic values,
+        pvalue values, mean value of set_one, mean value of set_two, difference of averagу
+
+        Parameters
+        ---------
+        set_one : list
+            list of score values for first sample
+        set_two : str
+            list of score values for second sample
+        name_set_one : str
+            name of first sample
+        name_set_two : str
+            name of second sample
+
+        Return
+        ------
+        dict with analysis results
+    """
+    if len(set_one) > len(set_two):
         set_big = set_one
         set_small = set_two
     else:
@@ -297,8 +574,8 @@ if __name__ == '__main__':
     data_Drugs_metadata = pd.read_csv(namespace.path_to_file_with_drugs_metadata, index_col=0)
     data_intersect_CFM_L1000FWD = pd.read_csv(namespace.path_to_file_with_intersect_cfm_l1000fwd, index_col=0)
 
-    syn, not_syn, all_s = split_signatures(namespace.source_type_cell, ' '.join(namespace.target_type_cell.split('_')), data_intersect_CFM_L1000FWD, data_Drugs_metadata,
-                     data_CD_signature_metadata)
+    syn, not_syn, all_s = split_signatures(namespace.source_type_cell, ' '.join(namespace.target_type_cell.split('_')),
+                                            data_intersect_CFM_L1000FWD, data_Drugs_metadata, data_CD_signature_metadata)
     print(len(syn), len(not_syn), len(all_s))
     print(len(set(syn)), len(set(not_syn)), len(set(all_s)))
     with open(namespace.path_to_dir_save_results + '/' + namespace.source_type_cell + '_' + namespace.target_type_cell + '/' + 'list_signatures' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") as file:

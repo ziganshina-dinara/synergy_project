@@ -1,29 +1,36 @@
+import sys
+import time
+import argparse  # read arguments from the command line
 import numpy as np
 import pandas as pd
 
-import requests # for make API requests
-from requests.exceptions import HTTPError# to handle the responses
-
-import graph_tool as gt #for make protein networks
+from sklearn.preprocessing import MinMaxScaler
+import requests  # for make API requests
+from requests.exceptions import HTTPError  # to handle the responses
+import graph_tool as gt  # for make protein networks
 from graph_tool import centrality as ct
 from graph_tool.draw import graph_draw
-from sklearn.preprocessing import MinMaxScaler
-import time #to calculate the time
 
-import argparse #read arguments from the command line
-import sys
 from function_signature_from_DE_v1 import make_signature_from_DE
 
+
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-up', '--path_to_file_with_up_genes', type = argparse.FileType())
-    parser.add_argument('-down', '--path_to_file_with_down_genes', type = argparse.FileType())
-    parser.add_argument('-DE', '--path_to_file_with_DE', type = str)
-    parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
-    parser.add_argument('-pvalue', '--pvalue_threshold', default = 0.01, type = float)
-    parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA', type = str)
-    parser.add_argument('-sp', '--species', default = 9606, type = int)
-    parser.add_argument('-exp_thr', '--experimental_score_threshold', default = 0.4, type = float)
+    parser.add_argument('-up', '--path_to_file_with_up_genes', type=argparse.FileType())
+    parser.add_argument('-down', '--path_to_file_with_down_genes', type=argparse.FileType())
+    parser.add_argument('-DE', '--path_to_file_with_DE', type=str)
+    parser.add_argument('-logFC', '--logFC_threshold', default=1.5, type=float)
+    parser.add_argument('-pvalue', '--pvalue_threshold', default=0.01, type=float)
+    parser.add_argument('-dir_results', '--path_to_dir_save_results', default='DATA', type=str)
+    parser.add_argument('-sp', '--species', default = 9606, type=int)
+    parser.add_argument('-exp_thr', '--experimental_score_threshold', default=0.4, type=float)
     parser.add_argument('-source', '--source_type_cell', type=str)
     parser.add_argument('-target', '--target_type_cell', type=str)
     return parser
@@ -113,13 +120,7 @@ class PPI_numpy_array:
             print(f'answer database STRING: {response.text}')
 
 
-
-
-
-"""
-write class for build the PPI graph
-"""
-
+# write class for build the PPI graph
 class PPI_graph:
     """
     class PPI_graph is designed to represent STRING protein-protein interaction network as a graph
@@ -221,12 +222,12 @@ class PPI_graph:
         print('получила датафрейм с метриками за :', '--- %s seconds ---' % (time.time() - start_time))
         return dataframe_all_topolog_metrics
 
+
 def create_df_gene_topo_scores_logFC(series_gene_logFC, dataframe_all_topolog_metrics_for_gene_STRING):
     """
-        creates a dataframe that contains logFC, all topological metrics  and influence score calculated by logFC
-        and topological metrics
+        creates a dataframe that contains logFC, all topological metrics
 
-        Parametrs
+        Parameters
         ---------
         series_gene_logFC : Series
             Series that contains logFC for each gene
@@ -236,14 +237,34 @@ def create_df_gene_topo_scores_logFC(series_gene_logFC, dataframe_all_topolog_me
         ------
         DataFrame that contains logFC, all topological metrics  and influence score calculated by logFC
         and topological metrics
-        """
+    """
     df_gene_logFC = pd.DataFrame(series_gene_logFC)
     df_logFC_topo_scores = df_gene_logFC.merge(dataframe_all_topolog_metrics_for_gene_STRING, how='left',
-                                                           left_index=True, right_index=True)
+                                                                                left_index=True, right_index=True)
 
     return df_logFC_topo_scores
 
+
 def create_df_gene_logFC_topo_score_from_beginning(gene_set, species, experimental_score_threshold, series_genes):
+    """
+        creates a dataframe that contains logFC, all topological metrics for differentially expressed genes
+
+        Parameters
+        ---------
+        gene_set : list
+            a list of genes with increased expression or list of genes with decreased expression
+        species : int
+            NCBI taxon identifiers (e.g. Human is 9606)
+        experimental_score_threshold : float
+            threshold for combined score. It's computed by combining the probabilities from
+            the different evidence channels and corrected for the probability of randomly observing an interaction.
+        series_genes : Series
+            Series that contains logFC for each gene
+
+        Return
+        ------
+        DataFrame that contains logFC, all topological metrics
+    """
     array = PPI_numpy_array(gene_set, species, experimental_score_threshold)
     matrix = array.get_interactions_as_adjacency_matrix()
     interactions_graph = PPI_graph(matrix, array.get_dict_number_genes())
@@ -251,6 +272,21 @@ def create_df_gene_logFC_topo_score_from_beginning(gene_set, species, experiment
     return df_topo
 
 def concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down):
+    """
+        Combine 2 dataframes that contain logFC, all topological metrics for genes with increased expression and genes
+        with decreased expression, into one and normalizes it
+
+        Parameters
+        ---------
+        df_topo_up : pandas.core.frame.DataFrame
+            dataframe that contain logFC, all topological metrics for genes with increased expression
+        df_topo_down : pandas.core.frame.DataFrame
+            dataframe that contain logFC, all topological metrics for genes with decreased expression
+
+        Return
+        ------
+        normalized DataFrame that contains logFC, all topological metrics for differentially expressed genes
+    """
     df_topo_concated = pd.concat([df_topo_up, df_topo_down], keys = ['up','down'])
     df_topo_concated['logFC'] = abs(df_topo_concated['logFC'])
     min_max_scaler = MinMaxScaler()
@@ -262,6 +298,25 @@ def concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down):
 
 
 def calculate_inf_score(df_logFC_topo_scores, func_inf_score, dict_multiplication_factor, dict_additive_factor):
+    """
+        Сalculate inf_score values based on logFC and topological metrics for genes
+
+        Parameters
+        ---------
+        df_logFC_topo_scores : pandas.core.frame.DataFrame
+            normalized DataFrame that contains logFC, all topological metrics for differentially expressed genes
+        func_inf_score : function
+            function to calculate inf_score values
+        dict_multiplication_factor : dict
+            dictionary with the values of the coefficients by which the metrics are multiplied
+            in the expression inf_score
+        dict_additive_factor : dict
+            a dictionary with coefficient values that are added to metrics in the expression inf_score
+
+        Return
+        ------
+        DataFrame that contains logFC, all topological metrics and inf_scores for differentially expressed genes
+    """
     df_logFC_topo_scores['inf_score'] = np.ones(df_logFC_topo_scores.shape[0])
     for key in ['up', 'down']:
         for gene in list(df_logFC_topo_scores.loc[key].index):
@@ -282,13 +337,25 @@ def calculate_inf_score(df_logFC_topo_scores, func_inf_score, dict_multiplicatio
             df_logFC_topo_scores.loc[key].loc[gene,'inf_score'] = func_inf_score(**d_arg)
     return df_logFC_topo_scores
 
+
 def func_inf_score_v1(**kwargs):
+    """
+         Сalculate inf_score values based on logFC and topological metrics for gene
+
+         Parameters
+         ---------
+         dict with list of multiplication factor, additive factor, topological metrics values for gene
+
+         Return
+         ------
+         inf_score
+     """
     inf_score = 1
     for (multiplication_factor, additive_factor, topo_score) in zip(kwargs['multiplication factor'], kwargs['additive_factor'], kwargs['topo_score']):
-        inf_score =inf_score * (multiplication_factor * topo_score + additive_factor)
-        #print('после умножения на метрику вышло :', inf_score)
+        inf_score = inf_score * (multiplication_factor * topo_score + additive_factor)
 
     return inf_score
+
 
 if __name__ == '__main__':
 

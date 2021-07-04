@@ -1,10 +1,15 @@
-import time #to calculate the time
-import numpy as np
-import pandas as pd
-import argparse #read arguments from the command line
+import argparse  # read arguments from the command line
 import sys
 
+
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('-signatures', '--path_to_file_with_signatures',
                         default = 'DATA/CD_signatures_binary_42809.gmt', type = argparse.FileType())
@@ -13,7 +18,22 @@ def createParser ():
 
     return parser
 
+
 def create_list_needed_signatures(out_from_file_with_signatures, list_sign_id):
+    """
+    create list of needed signatures by the list of sign_id and the content of the file with signatures from database
+
+    Parameters
+    ---------
+    out_from_file_with_signatures : str
+        content of the file with signatures from database
+    list_sign_id : list
+        list of sign_id for needed signatures
+
+    Return
+    ------
+    list of needed signatures
+    """
     l = out_from_file_with_signatures.strip().split('\n')
     list_sign_id_in_L1000FWD = []
     list_needed_signatures = []
@@ -25,6 +45,7 @@ def create_list_needed_signatures(out_from_file_with_signatures, list_sign_id):
             list_needed_signatures.append(l[k])
             list_needed_signatures.append(l[k+1])
     return list_needed_signatures
+
 
 if __name__ == '__main__':
 

@@ -1,19 +1,28 @@
-import time #to calculate the time
-import argparse #read arguments from the command line
+import time  # to calculate the time
+import argparse  # read arguments from the command line
 import sys
 import os
 import json
+import pandas as pd
+import numpy as np
+
 from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, make_signature_from_DE
 from PPI_v1 import create_df_gene_logFC_topo_score_from_beginning, calculate_inf_score, func_inf_score_v1, concat_df_log_FC_topo_score_normalize
 from CMap_dict import find_similarity, find_near_signatures
-import pandas as pd
-import numpy as np
-from validation import split_signatures, split_by_synergy, statistic_analys_results, draw, count_synergy_pair_in_top50, count_synergy_pair_in_top_5percent, count_pairs, rank_pair_based_syn_score, calculate_PSEA_metric
+from validation import split_signatures, split_by_synergy, statistic_analys_results, draw, count_synergy_pair_in_top50, \
+                    count_synergy_pair_in_top_5percent, count_pairs, rank_pair_based_syn_score, calculate_PSEA_metric
 from search_signatures_by_id import create_list_needed_signatures
 from create_list_dict_parameters import create_list_additive_multiplication_dicts
-from PSEA import psea_metric
+
 
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('-list_pair_signature_id', '--presence_file_with_list_pair_signature_id', default='no', type=str)
     parser.add_argument('-list_genes_string', '--presence_list_genes_string', default = 'no', type=str)
@@ -49,29 +58,31 @@ def createParser ():
     parser.add_argument('-upper_additive_factor', '--upper_bound_additive_factor_values', default = 2, type=int)
     parser.add_argument('-lower_multiplication_factor', '--lower_bound_multiplication_factor_values', default = 1, type=int)
     parser.add_argument('-upper_multiplication_factor', '--upper_bound_multiplication_factor_values', default = 2, type=int)
-
     return parser
+
 
 if __name__ == '__main__':
     total_start_time = time.time()
     print("начали")
+
     # read arguments from the command line
     parser = createParser()
     namespace = parser.parse_args(sys.argv[1:])
 
-    #create folder for results
+    # create folder for results
     path_to_folder_results = namespace.path_to_dir_save_results + '/' + namespace.source_type_cell + '_' + namespace.target_type_cell
     path_to_file_with_DE = path_to_folder_results + '/DE_edgeR_c_' + namespace.target_type_cell + '_' + namespace.source_type_cell + '.txt'
     print(path_to_file_with_DE)
-    #read needed files
+    # read needed files
     data_CD_signature_metadata = pd.read_csv(namespace.path_to_file_with_CD_signature_metadata, index_col=0)
     data_Drugs_metadata = pd.read_csv(namespace.path_to_file_with_drugs_metadata, index_col=0)
     data_intersect_CFM_L1000FWD = pd.read_csv(namespace.path_to_file_with_intersect_cfm_l1000fwd, index_col=0)
     file_with_signatures_42809 = namespace.path_to_file_with_signatures.read()
 
-    # find sets of signature id by collecting the signature id corresponding to the small molecules from the protocols for this transition
-
+    # find sets of signature id by collecting the signature id corresponding to the small molecules from the protocols
+    # for this transition
     start = time.time()
+    # in case there isn't dataframe with labels of synergistic and non-synergistic pairs
     if namespace.presence_file_with_list_pair_signature_id == 'no':
         print('Приступили к разделению id сигнатур')
         all_sign_id, df_sign_id_pairs_with_labels = split_signatures(' '.join(namespace.source_type_cell.split('_')),
@@ -86,7 +97,7 @@ if __name__ == '__main__':
                 "w") as file:
             file.write('\n'.join(all_sign_id))
 
-
+    # in case there is dataframe with labels of synergistic and non-synergistic pairs
     else:
         df_sign_id_pairs_with_labels = pd.read_csv(path_to_folder_results + '/' + 'df_pair_with_class_labels_'
                   + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
@@ -96,48 +107,53 @@ if __name__ == '__main__':
                 "r") as file:
             all_sign_id = file.read().split('\n')
 
-    #creating list of signatures
+    # creating list of signatures
+    # in case there isn't file with needed signatures
     if namespace.presence_file_with_required_signatures == 'no':
-
         with open(path_to_folder_results + '/list_signature_id_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") as file:
             file.write('\n'.join(all_sign_id))
-
         list_needed_signatures = create_list_needed_signatures(file_with_signatures_42809, all_sign_id)
         list_needed_signatures = '\n'.join(list_needed_signatures)
         with open(path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") as file:
             file.write(list_needed_signatures)
+
+    # in case there is file with needed signatures
     else:
         with open(path_to_folder_results + '/list_signatures_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
             list_needed_signatures = file.read()
 
-
     print('number of synergy signatures :', len([df_sign_id_pairs_with_labels['class_label'] == 1]), 'number of not synergy signatures :',
           len([df_sign_id_pairs_with_labels['class_label'] == 0]), 'number of all signatures :', len(all_sign_id))
 
-    #big step of calculating topological scores
+    # big step of calculating topological scores
     path_to_file_with_DE = path_to_folder_results + '/DE_edgeR_c_' + namespace.target_type_cell + '_' + namespace.source_type_cell + '.txt'
 
+    # if topological scores aren't calculated
     if namespace.presence_df_with_topolog_metrics == 'no':
+
+        # if genes weren't checked in STRING
         if namespace.presence_list_genes_string == 'no':
             start_time = time.time()
             up, down = get_signature_for_request_in_STRING(path_to_file_with_DE,
                                                                         namespace.logFC_threshold,
-                                                                        namespace.pvalue_threshold, number = 2000, species = namespace.species)
-            with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt',
-                    "w") as file:
+                                                                        namespace.pvalue_threshold, number=2000, species=namespace.species)
+            with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + \
+                      namespace.target_type_cell + '.txt', "w") as file:
                 file.write('\n'.join(up))
             print('время работы создания сигнатуры')
-            with open(path_to_folder_results + '/list_genes_in_string_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "w") \
-                    as file:
+            with open(path_to_folder_results + '/list_genes_in_string_down_' + namespace.source_type_cell + '_' + \
+                      namespace.target_type_cell + '.txt', "w") as file:
                 file.write('\n'.join(down))
-            print('время работы создания сигнатуры запроса с учетом проверки наличия генов в string:', '--- %s seconds ---' % (time.time() - start_time))
+            print('время работы создания сигнатуры запроса с учетом проверки наличия генов в string:',
+                  '--- %s seconds ---' % (time.time() - start_time))
 
+        # if genes were checked in STRING
         else:
-
             with open(path_to_folder_results + '/list_genes_in_string_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
                 up = file.read().split("\n")
             with open(path_to_folder_results + '/list_genes_in_string_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.txt', "r") as file:
                 down = file.read().split("\n")
+
         # make signature
         start_time = time.time()
         series_up_genes, series_down_genes = make_signature_from_DE(path_to_file_with_DE,
@@ -158,12 +174,14 @@ if __name__ == '__main__':
                                 columns = df_down_topo_score.columns, index = True)
         print('время работы вычисления топологических метрик:', '--- %s seconds ---' % (time.time() - start_time))
 
+    # if topological scores are calculated
     else:
         df_up_topo_score = pd.read_csv(path_to_folder_results + '/df_topo_up_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
         df_down_topo_score = pd.read_csv(path_to_folder_results + '/df_topo_down_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv', index_col=0)
 
     df_topo = concat_df_log_FC_topo_score_normalize(df_up_topo_score, df_down_topo_score)
     print('Посчитали inf_score')
+
     # create parameter dicts
     list_metric = ['logFC', 'betweenness', 'pagerank', 'closeness', 'katz', 'eigenvector',
                    'eigentrust']
@@ -176,20 +194,29 @@ if __name__ == '__main__':
             list_metric, namespace.source_type_cell, namespace.target_type_cell, path_to_folder_results)
     else:
         with open('DATA/dict_multiplication_optimal_factor_correct.json', 'r') as file:
-            dict_multiplication_optimal_factor = json.load(file)
+            #dict_multiplication_optimal_factor = json.load(file)
+            dict_multiplication_optimal_factor = {"betweenness": 9.84984928534643, "closeness": 4.6485753512889545, "eigentrust":9.49333193254202,
+                                                  "eigenvector": 9.55333414353536, "katz": 9.734513352116581, "logFC": 1.0620680541391545,
+                                                  "pagerank":  9.491544528188959}
+
+
         list_dict_multiplication_factor = [dict_multiplication_optimal_factor]
         dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1,
                                 'eigenvector': 1, 'eigentrust': 1}
         list_dict_additive_factor = [dict_additive_factor]
 
+    # Big step of calculation synergy score
+    # I use loop because sometimes  I needed check several sets of coefficients
     for (dict_additive_factor, dict_multiplication_factor, i) in zip(list_dict_additive_factor, list_dict_multiplication_factor,
                                                                      range(len(list_dict_additive_factor) * len(list_dict_multiplication_factor))):
         print(dict_additive_factor)
         print(dict_multiplication_factor)
+        # create directory to save results
         path_to_folder_results_single_parameters = path_to_folder_results + '/Validation_results_' + namespace.source_type_cell + '_' + \
         namespace.target_type_cell + '/total_results_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '_' + namespace.description
         os.mkdir(path_to_folder_results_single_parameters)
         print(path_to_folder_results_single_parameters)
+
         # calculate influence score
         df_inf_score = calculate_inf_score(df_topo, func_inf_score_v1, dict_multiplication_factor,
                                            dict_additive_factor)
@@ -206,10 +233,13 @@ if __name__ == '__main__':
                                         namespace.target_type_cell + '.txt'
         list_metrics_for_pair = namespace.list_metrics_for_pair.split(';')
         print(list_metrics_for_pair)
+        # calculate synergy_scores
         list_metric_name_with_matrix = find_similarity(list_needed_signatures, df_inf_score, namespace.number_processes,
                                                     path_to_file_with_query_terms, path_to_file_with_terms, presence_file_with_query_terms,
                                                                    presence_file_with_terms, list_metrics_for_pair)
         print('время подсчета synergy_metrics для всех пар:', '--- %s seconds ---' % (time.time() - start_time))
+
+        # validation for all ways of calculation synergy scores
         for (metric_name, matrix) in list_metric_name_with_matrix:
             matrix.to_csv(
                 path_to_folder_results_single_parameters + '/df_' + metric_name + '_matrix_' + namespace.source_type_cell + '_' +

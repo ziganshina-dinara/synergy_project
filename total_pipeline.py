@@ -1,12 +1,21 @@
-import time #to calculate the time
-import argparse #read arguments from the command line
+import time  # to calculate the time
+import argparse  # read arguments from the command line
 import sys
+import pandas as pd
+
 from function_signature_from_DE_v1 import get_signature_for_request_in_STRING, make_signature_from_DE
 from PPI_v1 import create_df_gene_logFC_topol_inf_score
 from CMap_dict import cosine_similarity
-import pandas as pd
+
 
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('-DE', '--path_to_file_with_DE', type = str)
     parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
@@ -22,6 +31,7 @@ def createParser ():
     parser.add_argument('-number_pair', '--number_pair_signatures', type=int)
     return parser
 
+
 if __name__ == '__main__':
     total_start_time = time.time()
     print("начали")
@@ -33,16 +43,18 @@ if __name__ == '__main__':
     start_time = time.time()
     up, down = get_signature_for_request_in_STRING(namespace.path_to_file_with_DE,
                                                                 namespace.logFC_threshold,
-                                                                namespace.pvalue_threshold, number = 2000, species = namespace.species)
+                                                                namespace.pvalue_threshold,
+                                                                number=2000,
+                                                                species=namespace.species)
     print('время работы создания сигнатуры запроса с учетом проверки наличия генов в string:', '--- %s seconds ---' % (time.time() - start_time))
 
-    '''
+    """
     with open("DATA/protein_network/list_proteins_up_in_STRING_cheart_fibroblast.txt", "r") as file:
         up = file.read().split("\n")
     print(up)
     with open("DATA/protein_network/list_proteins_down_in_STRING_cheart_fibroblast.txt", "r") as file:
         down = file.read().split("\n")
-    '''
+    """
     # make signature
     start_time = time.time()
     series_up_genes, series_down_genes = make_signature_from_DE(namespace.path_to_file_with_DE, namespace.logFC_threshold, namespace.pvalue_threshold)
@@ -56,8 +68,7 @@ if __name__ == '__main__':
 
     print('время работы вычисления топологических метрик:', '--- %s seconds ---' % (time.time() - start_time))
 
-
-
+    # calculate inf_scores
     out_of_file_with_signatures = namespace.path_to_file_with_signatures.read()
     df_CD_signature_metadata = pd.read_csv(namespace.path_to_file_with_CD_signature_metadata, index_col=0)
 
