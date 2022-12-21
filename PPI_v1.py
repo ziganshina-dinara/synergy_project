@@ -1,30 +1,38 @@
+import sys
+import time
+import argparse  # read arguments from the command line
 import numpy as np
 import pandas as pd
 
-import requests # for make API requests
-from requests.exceptions import HTTPError# to handle the responses
-
-import graph_tool as gt #for make protein networks
+from sklearn.preprocessing import MinMaxScaler
+import requests  # for make API requests
+from requests.exceptions import HTTPError  # to handle the responses
+import graph_tool as gt  # for make protein networks
 from graph_tool import centrality as ct
 from graph_tool.draw import graph_draw
 
-import time #to calculate the time
-
-import argparse #read arguments from the command line
-import sys
 from function_signature_from_DE_v1 import make_signature_from_DE
 
+
 def createParser ():
+    """
+    script parameters parser
+
+    Return
+    ------
+    instance of the class ArgumentParser
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-up', '--path_to_file_with_up_genes', type = argparse.FileType())
-    parser.add_argument('-down', '--path_to_file_with_down_genes', type = argparse.FileType())
-    parser.add_argument('-DE', '--path_to_file_with_DE', type = str)
-    parser.add_argument('-logFC', '--logFC_threshold', default = 1.5, type = float)
-    parser.add_argument('-pvalue', '--pvalue_threshold', default = 0.01, type = float)
-    parser.add_argument('-dir_results', '--path_to_dir_save_results', default = 'DATA/protein_network', type = str)
-    parser.add_argument('-sp', '--species', default = 9606, type = int)
-    parser.add_argument('-exp_thr', '--experimental_score_threshold', default = 0.4, type = float)
-    parser.add_argument('-conv', '--conversion', type=str)
+    parser.add_argument('-up', '--path_to_file_with_up_genes', type=argparse.FileType())
+    parser.add_argument('-down', '--path_to_file_with_down_genes', type=argparse.FileType())
+    parser.add_argument('-DE', '--path_to_file_with_DE', type=str)
+    parser.add_argument('-logFC', '--logFC_threshold', default=1.5, type=float)
+    parser.add_argument('-pvalue', '--pvalue_threshold', default=0.01, type=float)
+    parser.add_argument('-dir_results', '--path_to_dir_save_results', default='DATA', type=str)
+    parser.add_argument('-sp', '--species', default = 9606, type=int)
+    parser.add_argument('-exp_thr', '--experimental_score_threshold', default=0.4, type=float)
+    parser.add_argument('-source', '--source_type_cell', type=str)
+    parser.add_argument('-target', '--target_type_cell', type=str)
     return parser
 
 
@@ -112,13 +120,7 @@ class PPI_numpy_array:
             print(f'answer database STRING: {response.text}')
 
 
-
-
-
-"""
-write class for build the PPI graph
-"""
-
+# write class for build the PPI graph
 class PPI_graph:
     """
     class PPI_graph is designed to represent STRING protein-protein interaction network as a graph
@@ -190,8 +192,8 @@ class PPI_graph:
         graph.edge_properties['trust'] = eprop_trust
         print('confidence score за :', '--- %s seconds ---' % (time.time() - start_time))
 
-        list_metrics = ['betweenness', 'pagerank', 'closeness', 'katz', 'hits_authority', 'hits_hub', 'eigenvector',
-                        'eigentrust'] # 'trust_transitivity'
+        list_metrics = ['betweenness', 'pagerank', 'closeness', 'katz',  'eigenvector',
+                        'eigentrust'] # 'trust_transitivity', 'hits_authority', 'hits_hub',
 
         dict_map = {}
         start_time = time.time()
@@ -199,8 +201,8 @@ class PPI_graph:
         dict_map['pagerank'] = ct.pagerank(graph)
         dict_map['closeness'] = ct.closeness(graph)
         dict_map['katz'] = ct.katz(graph)
-        dict_map['hits_authority'] = ct.hits(graph)[1]
-        dict_map['hits_hub'] = ct.hits(graph)[2]
+        #dict_map['hits_authority'] = ct.hits(graph)[1]
+        #dict_map['hits_hub'] = ct.hits(graph)[2]
         dict_map['eigenvector'] = ct.eigenvector(graph)[1]
         #print('trust_transitivity')
         #"dict_map['trust_transitivity'] = ct.trust_transitivity(graph,  graph.edge_properties["trust"])
@@ -220,12 +222,12 @@ class PPI_graph:
         print('получила датафрейм с метриками за :', '--- %s seconds ---' % (time.time() - start_time))
         return dataframe_all_topolog_metrics
 
-def create_df_gene_topolog_scores_logFC(series_gene_logFC, dataframe_all_topolog_metrics_for_gene_STRING):
-    """
-        creates a dataframe that contains logFC, all topological metrics  and influence score calculated by logFC
-        and topological metrics
 
-        Parametrs
+def create_df_gene_topo_scores_logFC(series_gene_logFC, dataframe_all_topolog_metrics_for_gene_STRING):
+    """
+        creates a dataframe that contains logFC, all topological metrics
+
+        Parameters
         ---------
         series_gene_logFC : Series
             Series that contains logFC for each gene
@@ -235,23 +237,124 @@ def create_df_gene_topolog_scores_logFC(series_gene_logFC, dataframe_all_topolog
         ------
         DataFrame that contains logFC, all topological metrics  and influence score calculated by logFC
         and topological metrics
-        """
+    """
     df_gene_logFC = pd.DataFrame(series_gene_logFC)
-    df_gene_signature_inf_scores = df_gene_logFC.merge(dataframe_all_topolog_metrics_for_gene_STRING, how='left',
-                                                           left_index=True, right_index=True)
-    df_gene_signature_inf_scores['inf_score'] = np.ones(df_gene_signature_inf_scores.shape[0])
-    dict_coefficient = {}
-    for metric in list(df_gene_signature_inf_scores.columns):
-        dict_coefficient[metric] = 1
-    for gene in list(df_gene_signature_inf_scores.index):
-        for metric in list(df_gene_signature_inf_scores.columns)[:-1]:
-            if (not np.isnan(df_gene_signature_inf_scores.loc[gene, metric])):
-                df_gene_signature_inf_scores.loc[gene, 'inf_score'] = df_gene_signature_inf_scores.loc[gene, 'inf_score'] * \
-                                                    (dict_coefficient[metric] + abs(df_gene_signature_inf_scores.loc[gene, metric]))
-            else:
-                pass
+    df_logFC_topo_scores = df_gene_logFC.merge(dataframe_all_topolog_metrics_for_gene_STRING, how='left',
+                                                                                left_index=True, right_index=True)
 
-    return df_gene_signature_inf_scores
+    return df_logFC_topo_scores
+
+
+def create_df_gene_logFC_topo_score_from_beginning(gene_set, species, experimental_score_threshold, series_genes):
+    """
+        creates a dataframe that contains logFC, all topological metrics for differentially expressed genes
+
+        Parameters
+        ---------
+        gene_set : list
+            a list of genes with increased expression or list of genes with decreased expression
+        species : int
+            NCBI taxon identifiers (e.g. Human is 9606)
+        experimental_score_threshold : float
+            threshold for combined score. It's computed by combining the probabilities from
+            the different evidence channels and corrected for the probability of randomly observing an interaction.
+        series_genes : Series
+            Series that contains logFC for each gene
+
+        Return
+        ------
+        DataFrame that contains logFC, all topological metrics
+    """
+    array = PPI_numpy_array(gene_set, species, experimental_score_threshold)
+    matrix = array.get_interactions_as_adjacency_matrix()
+    interactions_graph = PPI_graph(matrix, array.get_dict_number_genes())
+    df_topo = create_df_gene_topo_scores_logFC(series_genes, interactions_graph.get_dataframe_all_topolog_metrics())
+    return df_topo
+
+def concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down):
+    """
+        Combine 2 dataframes that contain logFC, all topological metrics for genes with increased expression and genes
+        with decreased expression, into one and normalizes it
+
+        Parameters
+        ---------
+        df_topo_up : pandas.core.frame.DataFrame
+            dataframe that contain logFC, all topological metrics for genes with increased expression
+        df_topo_down : pandas.core.frame.DataFrame
+            dataframe that contain logFC, all topological metrics for genes with decreased expression
+
+        Return
+        ------
+        normalized DataFrame that contains logFC, all topological metrics for differentially expressed genes
+    """
+    df_topo_concated = pd.concat([df_topo_up, df_topo_down], keys = ['up','down'])
+    df_topo_concated['logFC'] = abs(df_topo_concated['logFC'])
+    min_max_scaler = MinMaxScaler()
+    df_topo_concated_positive_logFC_MinMaxScaler = min_max_scaler.fit_transform(df_topo_concated)
+    df_topo_concated_positive_logFC_MinMaxScaler = pd.DataFrame(df_topo_concated_positive_logFC_MinMaxScaler)
+    df_topo_concated_positive_logFC_MinMaxScaler.columns = df_topo_concated.columns
+    df_topo_concated_positive_logFC_MinMaxScaler.index = df_topo_concated.index
+    return df_topo_concated_positive_logFC_MinMaxScaler
+
+
+def calculate_inf_score(df_logFC_topo_scores, func_inf_score, dict_multiplication_factor, dict_additive_factor):
+    """
+        Сalculate inf_score values based on logFC and topological metrics for genes
+
+        Parameters
+        ---------
+        df_logFC_topo_scores : pandas.core.frame.DataFrame
+            normalized DataFrame that contains logFC, all topological metrics for differentially expressed genes
+        func_inf_score : function
+            function to calculate inf_score values
+        dict_multiplication_factor : dict
+            dictionary with the values of the coefficients by which the metrics are multiplied
+            in the expression inf_score
+        dict_additive_factor : dict
+            a dictionary with coefficient values that are added to metrics in the expression inf_score
+
+        Return
+        ------
+        DataFrame that contains logFC, all topological metrics and inf_scores for differentially expressed genes
+    """
+    df_logFC_topo_scores['inf_score'] = np.ones(df_logFC_topo_scores.shape[0])
+    for key in ['up', 'down']:
+        for gene in list(df_logFC_topo_scores.loc[key].index):
+            list_multiplication_factor = []
+            list_additive_factor = []
+            list_topo_score = []
+            for metric in list(df_logFC_topo_scores.columns)[:-1]:
+                if (not np.isnan(df_logFC_topo_scores.loc[key].loc[gene, metric])):
+                    list_multiplication_factor.append(dict_multiplication_factor[metric])
+                    list_additive_factor.append(dict_additive_factor[metric])
+                    list_topo_score.append(df_logFC_topo_scores.loc[key].loc[gene, metric])
+                else:
+                    pass
+            d_arg = {}
+            d_arg['multiplication factor'] = list_multiplication_factor
+            d_arg['additive_factor'] = list_additive_factor
+            d_arg['topo_score'] = list_topo_score
+            df_logFC_topo_scores.loc[key].loc[gene,'inf_score'] = func_inf_score(**d_arg)
+    return df_logFC_topo_scores
+
+
+def func_inf_score_v1(**kwargs):
+    """
+         Сalculate inf_score values based on logFC and topological metrics for gene
+
+         Parameters
+         ---------
+         dict with list of multiplication factor, additive factor, topological metrics values for gene
+
+         Return
+         ------
+         inf_score
+     """
+    inf_score = 1
+    for (multiplication_factor, additive_factor, topo_score) in zip(kwargs['multiplication factor'], kwargs['additive_factor'], kwargs['topo_score']):
+        inf_score = inf_score * (multiplication_factor * topo_score + additive_factor)
+
+    return inf_score
 
 
 if __name__ == '__main__':
@@ -268,6 +371,7 @@ if __name__ == '__main__':
     down = namespace.path_to_file_with_down_genes.read()
     down = down.split('\n')
 
+    path_to_dir_save_results_conv = namespace.path_to_dir_save_results + '/' + namespace.source_type_cell +'_' + namespace.target_type_cell
 
     #first let's look at genes with increased expression
 
@@ -280,8 +384,8 @@ if __name__ == '__main__':
                                       up_interactions_numpy_array.get_dict_number_genes())
 
     #up_interactions_graph.draw_PPI_graph()
-    up_interactions_graph.save_image_graph(namespace.path_to_dir_save_results + '/up_PPI_grap_tool_' + namespace.conversion + '.png')
-    up_interactions_graph.save_graph(namespace.path_to_dir_save_results + '/up_PPI_graph_tool_' +  namespace.conversion + '.gt')
+    up_interactions_graph.save_image_graph( path_to_dir_save_results_conv + '/PPI_grap_tool_up_' + namespace.source_type_cell+'_' + namespace.target_type_cell + '.png')
+    up_interactions_graph.save_graph(path_to_dir_save_results_conv + '/PPI_graph_tool_up_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.gt')
     print('--- %s seconds ---' % (time.time() - start_time))
 
     q = 0
@@ -296,8 +400,8 @@ if __name__ == '__main__':
     print('number vertices in up', n)
 
     start_time = time.time()
-    df_inf = create_df_gene_topolog_scores_logFC(series_up_genes, up_interactions_graph.get_dataframe_all_topolog_metrics())
-    df_inf.to_csv(namespace.path_to_dir_save_results + '/df_genes_up_inf_score_' + namespace.conversion + '.csv', columns = df_inf.columns, index = True)
+    df_topo_up = create_df_gene_topo_scores_logFC(series_up_genes, up_interactions_graph.get_dataframe_all_topolog_metrics())
+    df_topo_up.to_csv(path_to_dir_save_results_conv + '/df_topo_up_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.csv', columns = df_topo_up.columns, index = True)
     print('получила датафрейм со скорами за :', '--- %s seconds ---' % (time.time() - start_time))
 
 
@@ -309,8 +413,8 @@ if __name__ == '__main__':
     down_interactions_graph = PPI_graph(down_interactions_numpy_array.get_interactions_as_adjacency_matrix(),
                                       down_interactions_numpy_array.get_dict_number_genes())
     # up_interactions_graph.draw_PPI_graph()
-    down_interactions_graph.save_image_graph(namespace.path_to_dir_save_results + '/down_PPI_grap_tool_' + namespace.conversion + '.png')
-    down_interactions_graph.save_graph(namespace.path_to_dir_save_results + '/down_PPI_graph_tool_' +  namespace.conversion + '.gt')
+    down_interactions_graph.save_image_graph(path_to_dir_save_results_conv + '/PPI_grap_tool_down_' + namespace.source_type_cell +'_' + namespace.target_type_cell + '.png')
+    down_interactions_graph.save_graph(path_to_dir_save_results_conv + '/PPI_graph_tool_down_' +  namespace.source_type_cell +'_' + namespace.target_type_cell + '.gt')
     print('--- %s seconds ---' % (time.time() - start_time))
 
     q = 0
@@ -325,9 +429,23 @@ if __name__ == '__main__':
     print('number vertices in down', n)
 
     start_time = time.time()
-    df_down_inf = create_df_gene_topolog_scores_logFC(series_down_genes, down_interactions_graph.get_dataframe_all_topolog_metrics())
-    df_down_inf.to_csv(namespace.path_to_dir_save_results + '/df_genes_down_inf_score_' + namespace.conversion + '.csv', columns=df_down_inf.columns, index=True)
+    df_topo_down = create_df_gene_topo_scores_logFC(series_down_genes, down_interactions_graph.get_dataframe_all_topolog_metrics())
+    df_topo_down.to_csv(path_to_dir_save_results_conv + '/df_topo_down_' + namespace.source_type_cell +'_' + namespace.target_type_cell +
+                        '.csv', columns=df_topo_down.columns, index=True)
     print('получила датафрейм со скорами :', '--- %s seconds ---' % (time.time() - start_time))
+
+    df_topo = concat_df_log_FC_topo_score_normalize(df_topo_up, df_topo_down)
+    df_topo.to_csv(
+        path_to_dir_save_results_conv + '/df_topo_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv',
+        columns=df_topo.columns, index=True)
+    dict_multiplication_factor = {'betweenness': 9.460967341000304, 'closeness': 6.238127619523721, 'eigentrust':
+        8.909487859706598, 'eigenvector': 8.602610008529997, 'katz': 5.917121344183359, 'logFC': 8.187432320368355,
+                                  'pagerank': 3.571469665607328}
+    dict_additive_factor = {'logFC': 1, 'betweenness': 1, 'pagerank': 1, 'closeness': 1, 'katz': 1, 'eigenvector': 1, 'eigentrust': 1}
+    df_inf = calculate_inf_score(df_topo, func_inf_score_v1, dict_multiplication_factor,
+                                       dict_additive_factor)
+    df_inf.to_csv(path_to_dir_save_results_conv + '/df_inf_' + namespace.source_type_cell + '_' + namespace.target_type_cell + '.csv',
+        columns=df_inf.columns, index=True)
 
 
 
